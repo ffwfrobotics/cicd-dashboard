@@ -141,6 +141,8 @@ class StateRepo:
         by_head = {p["head"]["ref"]: p for p in prs}
         for p in st.promotions:
             pr = by_head.get(f"promote/{p.id}")
+            if pr and pr.get("merged") and not pr.get("merged_by"):
+                pr = self.forge.get(f"/repos/{self.repo}/pulls/{pr['number']}", ttl=300) or pr  # the list omits merged_by
             if pr:
                 reviews = self.forge.get(f"/repos/{self.repo}/pulls/{pr['number']}/reviews", ttl=15) or []
                 p.pr = {"number": pr["number"], "url": pr["html_url"], "state": pr["state"],
