@@ -59,6 +59,15 @@ class BranchRow:
     env: Env | None
     head: CommitRow
     active: bool
+    paused: dict | None = None
+    waiting: bool = False        # no environment because the tenant is at its branch limit
+
+
+@dataclass
+class Usage:
+    tenant: str
+    used: int
+    limit: int
 
 
 class Model:
@@ -86,6 +95,13 @@ class Model:
 
     def app(self, name: str) -> AppInfo | None:
         return next((a for a in self.apps() if a.name == name), None)
+
+    def usage(self, tenant: str) -> Usage:
+        st = self.state()
+        lim = st.limits or {}
+        limit = int((lim.get(tenant) or {}).get("branchLimit", lim.get("default", 16)))
+        used = sum(1 for a in self.apps() if a.tenant == tenant for e in a.envs if e.kind == "branch")
+        return Usage(tenant, used, limit)
 
     def tenants(self) -> dict[str, list[AppInfo]]:
         out: dict[str, list[AppInfo]] = {}
@@ -118,6 +134,14 @@ class Model:
                   and any(fnmatch.fnmatch(branch, p) for p in app.exclude))
         f.jobs = {k: {"status": v["status"], "url": v.get("url")} for k, v in f.jobs.items()}
         st = self.state()
+        if branch and branch != app.dev_branch:
+            if branch in st.paused.get(app.name, {}):
+                p = st.paused[app.name][branch]
+                f.not_in_cicd = f"paused by {p.get('by', '?')}"
+            elif not f.branch_excluded and app.env(f"branch-{branch_slug(app.name, branch)}") is None:
+                u = self.usage(app.tenant)
+                if u.used >= u.limit:
+                    f.not_in_cicd = f"tenant {app.tenant} is at its limit of {u.limit} branch environments"
         deploys = deploys if deploys is not None else self.state_repo.deploys(app.name)
         dep = next((d for d in deploys if d.commit == sha), None)
         if dep:
@@ -159,7 +183,10 @@ class Model:
                 env_dir = "dev" if b["name"] == app.dev_branch else f"branch-{branch_slug(app.name, b['name'])}"
                 head = self.commit_row(app, repo, b["commit"], b["name"], jobs, deploys)
                 excluded = b["name"] != app.dev_branch and any(fnmatch.fnmatch(b["name"], p) for p in app.exclude)
-                rows.append(BranchRow(name=b["name"], repo=repo, env=app.env(env_dir), head=head, active=not excluded))
+                paused = self.state().paused.get(app.name, {}).get(b["name"])
+                waiting = "limit" in next((s.detail for s in head.stages if s.key == "tests"), "")
+                rows.append(BranchRow(name=b["name"], repo=repo, env=app.env(env_dir), head=head, active=not excluded,
+                                      paused=paused, waiting=waiting))
         return sorted(rows, key=lambda r: (r.name != app.dev_branch, r.name))
 
     def history(self, app: AppInfo, branch: str | None = None, limit: int = 8) -> list[CommitRow]:

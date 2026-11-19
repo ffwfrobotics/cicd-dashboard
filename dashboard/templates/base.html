@@ -37,12 +37,17 @@
   .prodside { background: color-mix(in srgb, var(--chip) 70%, transparent); }
   .rule { border-left: 3px solid var(--warn); padding: .4rem .7rem; background: var(--chip); margin: .6rem 0; }
   .who { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; }
+  .flash { border: 1px solid var(--line); border-left: 4px solid var(--ok); padding: .5rem .8rem; margin-bottom: 1rem; background: var(--chip); }
+  form.inline { display: inline; } button, .btn { font: inherit; font-size: .85rem; padding: .15rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--chip); color: var(--fg); cursor: pointer; text-decoration: none; }
+  button.primary { border-color: var(--ok); color: var(--ok); } button.danger { border-color: var(--fail); color: var(--fail); }
+  .row-actions { white-space: nowrap; } input { font: inherit; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
 </style>
 </head>
 <body hx-ext="sse" sse-connect="/events">
 <header><span class="brand"><a href="/" style="text-decoration:none">cicd-dashboard</a></span>
 <span class="muted">owner's view · cicd-ref-arch</span>
-<span class="live" title="pages refresh themselves when something changes">● live · {{ VERSION }} ({{ COMMIT[:7] }})</span></header>
-<main>{% block body %}{% endblock %}</main>
+<span class="live" title="pages refresh themselves when something changes">● live · {{ VERSION }} ({{ COMMIT[:7] }})</span>
+<span>{% if user %}{{ user.login }} · <a href="/auth/logout">sign out</a>{% elif auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a>{% else %}<span class="muted" title="no OAuth client in this environment">read-only</span>{% endif %}</span></header>
+<main>{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}{% block body %}{% endblock %}</main>
 </body>
 </html>

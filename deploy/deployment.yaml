@@ -23,6 +23,9 @@ spec:
         - {name: FORGE_URL, value: "https://forge.goblincorps.com"}
         - {name: STATE_REPO, value: "ffwf/cicd-ref-arch"}
         - {name: CLUSTER, value: "c-local"}
+        # the forge OAuth2 client and session key; created out of band in dev and prod only, so
+        # branch environments run read-only (their hosts aren't registered redirect URIs anyway)
+        envFrom: [{secretRef: {name: dashboard-oauth, optional: true}}]
         readinessProbe:
           httpGet: {path: /healthz, port: http}
           periodSeconds: 1

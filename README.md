@@ -49,9 +49,23 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `CLUSTER` | `c-local` |
 | `FORGEJO_TOKEN` | none |
 
-## Next
+## Step 2: sign in and act as yourself
 
-- **Step 2:** sign in (Keycloak, or Forgejo as the OAuth provider) and act as the user: request and approve promotions, remove or pause branch environments, and the tenant's 16-branch limit.
+**Sign-in.** Sign-in is through the forge's OAuth2 app: authorization code with PKCE S256. The forge itself signs people in through Keycloak (FFwF SSO). Every action is a Forgejo API call with your own token, so the forge records it as you.
+
+**Configuration.** The client comes from Secret `dashboard-oauth`, which exists only in `dashboard-dev` and `dashboard` (prod) and is created by hand, never through git. It holds `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_ISSUER` and `SESSION_KEY`. The registered redirect URIs are `https://dashboard[-dev].c-local.k.ffwf.net/auth/callback`, so use the https URL. Branch environments have no Secret and stay read-only.
+
+| Action | Who | How |
+|---|---|---|
+| Request a promotion | write on the app repo | Dispatches the app's own pipeline (`action: request-promotion`). You are recorded as the requester. |
+| Pause, resume, remove a branch environment | write on the app repo | Dispatches the app's own pipeline (`action: pause` and so on). The state repo commit names you. |
+| Approve, or approve by merging, a promotion | anyone but its requester and the PR's author | A review or merge on the state repo's PR, as you. The dashboard won't offer it to the requester, and says why. |
+
+**Tenant limit.** At most 16 branch environments per tenant are in CI/CD at a time; set in cicd-ref-arch `tenants/_limits.yaml`. A branch over the limit, or a paused one, isn't tested, built or deployed, and the dashboard says why.
+
+**Sessions** live in memory: after the dashboard scales to zero, the next page signs you in again with one redirect and no password.
+
+## Next
 - **Step 3:** OSCAL self-assessment per commit.
 - **Step 4:** imported findings become failing tests.
 - **Step 5:** advisories trigger selective re-scans.

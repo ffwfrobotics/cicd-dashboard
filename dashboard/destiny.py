@@ -58,6 +58,7 @@ class Facts:
     in_prod: bool = False
     prod_superseded: bool = False
     branch_excluded: bool = False
+    not_in_cicd: str = ""             # why this branch's pushes skip CI/CD (paused, tenant limit)
     now: dt.datetime | None = None
 
 
@@ -76,6 +77,12 @@ def destiny(f: Facts) -> list[Stage]:
 
     st["committed"].state = "ok"
     st["committed"].detail = f"{f.author} · {f.when[:16].replace('T', ' ')}"
+
+    if f.not_in_cicd and not f.deploy:
+        for k in ("tests", "build", "security", "deployed"):
+            st[k].state = "skip"
+        st["tests"].detail = f"not in CI/CD: {f.not_in_cicd}"
+        return [st[k] for k, _ in STAGES]
 
     # tests
     t = f.jobs.get("test")

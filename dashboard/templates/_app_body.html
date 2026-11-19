@@ -11,15 +11,31 @@
 {% endfor %}
 </div>
 
-<h2>Branches</h2>
+{% set dev = a.env('dev') %}
+{% if user and can_write %}
+<h2>Request a promotion to prod</h2>
+<form method="post" action="/a/{{ a.name }}/act">
+  <input type="hidden" name="action" value="request-promotion"><input type="hidden" name="csrf" value="{{ user.csrf }}">
+  Promote what dev runs now{% if dev %} (<code>{{ (dev.commit or '')[:7] }}</code>){% endif %}.
+  <input name="reason" placeholder="why" size="30"> <input name="not_before" placeholder="not before (UTC, optional)" size="24">
+  <button class="primary">Request</button>
+  <div class="muted">You will be the requester; someone else has to approve it.</div>
+</form>
+{% endif %}
+
+<h2>Branches <span class="muted" style="font-weight:400;font-size:.9rem">· tenant {{ usage.tenant }}: {{ usage.used }} of {{ usage.limit }} branch environments in use</span></h2>
 <table>
-<tr><th>Branch</th><th>Head</th><th>Road to prod</th><th>Environment</th></tr>
+<tr><th>Branch</th><th>Head</th><th>Road to prod</th><th>Environment</th>{% if user and can_write %}<th></th>{% endif %}</tr>
 {% for b in branches %}
 <tr>
-  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill">dev</span>{% endif %}{% if not b.active %} <span class="pill s-skip">excluded</span>{% endif %}</td>
+  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill">dev</span>{% endif %}{% if not b.active %} <span class="pill s-skip">excluded</span>{% endif %}{% if b.paused %} <span class="pill s-skip" title="paused by {{ b.paused.by }} at {{ b.paused.at }}">paused</span>{% endif %}{% if b.waiting %} <span class="pill s-warn">waiting for a slot</span>{% endif %}</td>
   <td><a href="/a/{{ a.name }}/c/{{ b.head.sha }}?branch={{ b.name }}"><code>{{ b.head.short }}</code></a> <span class="muted">{{ b.head.message[:60] }}</span></td>
   <td>{{ meter(b.head.stages) }}</td>
   <td>{% if b.env %}{% for h in b.env.hosts[:1] %}<a href="https://{{ h }}/">{{ h }}</a>{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+  {% if user and can_write %}<td class="row-actions">{% if b.name != a.dev_branch and b.active %}
+    {% for act, label, cls in ([('resume', 'Resume', 'primary')] if b.paused else [('pause', 'Pause', '')] + ([('remove-env', 'Remove env', 'danger')] if b.env else [])) %}
+    <form class="inline" method="post" action="/a/{{ a.name }}/act"><input type="hidden" name="action" value="{{ act }}"><input type="hidden" name="branch" value="{{ b.name }}"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="{{ cls }}" title="{{ {'pause': 'stop CI/CD for this branch and free its slot', 'resume': 'let pushes to this branch go through CI/CD again', 'remove-env': 'remove its environment now; the next push brings it back'}[act] }}">{{ label }}</button></form>
+    {% endfor %}{% endif %}</td>{% endif %}
 </tr>
 {% endfor %}
 </table>

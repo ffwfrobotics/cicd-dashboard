@@ -101,6 +101,8 @@ class State:
     envs: dict[str, list[Env]]
     promotions: list[Promotion]
     configs: dict[str, dict]       # app -> its cicd.yaml as last deployed (dev preferred)
+    paused: dict[str, dict]        # app -> {branch: {by, at}}
+    limits: dict                   # tenants/_limits.yaml
     fetched: float
 
 
@@ -178,7 +180,7 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
     y = lambda p: yaml.safe_load(files[p]) if p in files else None  # noqa: E731
     tenants = {}
     for p in files:
-        if p.startswith("tenants/") and p.endswith(".yaml"):
+        if p.startswith("tenants/") and p.endswith(".yaml") and not p.startswith("tenants/_"):
             t = yaml.safe_load(files[p])
             tenants[t["metadata"]["name"]] = t
     envs: dict[str, list[Env]] = {}
@@ -194,6 +196,11 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
                 rendered_at=meta.get("renderedAt"), security=(rec or {}).get("gate"),
                 failing=[f for f in (rec or {}).get("findings", []) if f.get("outcome") == "fail"],
                 promotion=meta.get("promotion")))
+    paused = {}
+    for p in files:
+        m = re.match(rf"{re.escape(prefix)}([^/]+)/paused.yaml$", p)
+        if m:
+            paused[m.group(1)] = (yaml.safe_load(files[p]) or {}).get("branches") or {}
     configs: dict[str, dict] = {}
     for p in sorted(files, key=lambda p: (not p.endswith("/dev/cicd.yaml"), p)):
         if p.startswith(prefix) and p.endswith("/cicd.yaml"):
@@ -212,4 +219,5 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
             not_before=d.get("notBefore", ""), requested_by=d.get("requestedBy", ""), reason=d.get("reason", ""),
             approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt")))
     return State(head=head, cluster=y(f"clusters/{cluster}/cicd-cluster.yaml") or {}, tenants=tenants,
-                 envs=envs, promotions=promotions, configs=configs, fetched=time.time())
+                 envs=envs, promotions=promotions, configs=configs, paused=paused,
+                 limits=y("tenants/_limits.yaml") or {}, fetched=time.time())

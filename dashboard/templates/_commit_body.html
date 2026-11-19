@@ -34,6 +34,19 @@
   <span class="muted">Not before</span><span>{{ p.not_before }}</span>
   {% if p.security %}<span class="muted">Security at apply</span><span>{{ p.security }}</span>{% endif %}
 </div>
+{% if pr and pr.state == 'open' %}
+  {% if not user %}
+  <p>{% if auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to approve or merge.{% endif %}</p>
+  {% elif user.login in (p.requested_by, pr.author) %}
+  <p class="s-warn">You {{ 'requested' if user.login == p.requested_by else 'opened' }} this promotion, so you can't approve it: ask someone else.</p>
+  {% else %}
+  <p>
+    <form class="inline" method="post" action="/promotions/{{ p.id }}/approve"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary">Approve as {{ user.login }}</button></form>
+    <form class="inline" method="post" action="/promotions/{{ p.id }}/merge"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary">Approve by merging</button></form>
+    <span class="muted">Applied at or after {{ p.not_before }}, after a last security scan.</span>
+  </p>
+  {% endif %}
+{% endif %}
 <div class="rule"><strong>Two people for prod.</strong> The approval or the merge must come from someone other than <strong>{{ p.requested_by }}</strong> (who requested it){% if pr.author and pr.author != p.requested_by %} and <strong>{{ pr.author }}</strong> (who opened the PR){% endif %}. Forgejo would let the requester merge it; the platform would refuse to apply it. Writing the code doesn't disqualify anyone.</div>
 {% endif %}
 
