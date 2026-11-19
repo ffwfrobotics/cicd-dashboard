@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import gate %}
+{% block body %}
+<div class="crumbs">Tenants</div>
+<h1>Applications</h1>
+{% for tenant, apps in tenants.items() %}
+<h2>Tenant <code>{{ tenant }}</code></h2>
+<div class="cards">
+{% for a in apps %}
+  <div class="card">
+    <h3><a href="/a/{{ a.name }}">{{ a.name }}</a></h3>
+    <div class="muted">{% for r in a.repos %}<code>{{ r }}</code>{% if a.path != '.' %} <code>{{ a.path }}</code>{% endif %}{% endfor %}</div>
+    <table style="margin-top:.4rem">
+    {% for e in a.envs if e.kind != 'branch' %}
+      <tr><td>{{ e.dir }}</td><td><a href="/a/{{ a.name }}/c/{{ e.commit }}"><code>{{ (e.commit or '')[:7] }}</code></a></td><td>{{ gate(e.security) }}</td></tr>
+    {% endfor %}
+      <tr><td class="muted" colspan="3">{{ a.envs | selectattr('kind', 'equalto', 'branch') | list | length }} branch environment(s)</td></tr>
+    </table>
+  </div>
+{% endfor %}
+</div>
+{% endfor %}
+<p class="muted" style="margin-top:2rem">State repo <code>{{ state.head[:7] }}</code>. Everything here is read from git and Forgejo; the dashboard stores nothing yet.</p>
+{% endblock %}

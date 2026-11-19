@@ -1,0 +1,9 @@
+{% macro glyph(s) -%}
+<span class="s-{{ s.state }}">{% if s.state == 'run' %}<span class="spin">◌</span>{% else %}{{ s.glyph }}{% endif %}</span>
+{%- endmacro %}
+{% macro meter(stages) -%}
+<span class="meter">{% for s in stages %}<span class="g{% if s.preview %} preview{% endif %}" title="{{ s.label }}{% if s.detail %}: {{ s.detail }}{% endif %}{% if s.preview %} ({{ s.preview }}){% endif %}">{{ glyph(s) }}</span>{% endfor %}</span>
+{%- endmacro %}
+{% macro gate(sec) -%}
+{% if sec %}<span class="pill s-{{ {'pass':'ok','warn':'warn','fail':'fail'}.get(sec.status, 'todo') }}">security {{ sec.status }}</span>{% else %}<span class="pill s-todo">no security record</span>{% endif %}
+{%- endmacro %}

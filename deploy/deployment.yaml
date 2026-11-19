@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: dashboard}
+spec:
+  # no replicas: KEDA owns the replica count (0 when idle)
+  selector: {matchLabels: {app: dashboard}}
+  template:
+    metadata:
+      labels: {app: dashboard}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: dashboard
+        image: app-image
+        ports: [{name: http, containerPort: 8080}]
+        env:
+        - {name: FORGE_URL, value: "https://forge.goblincorps.com"}
+        - {name: STATE_REPO, value: "ffwf/cicd-ref-arch"}
+        - {name: CLUSTER, value: "c-local"}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 20m, memory: 64Mi}
+          limits: {memory: 256Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}]

@@ -1,0 +1,38 @@
+{% from "_macros.html" import meter, gate %}
+<h2>Environments</h2>
+<div class="cards">
+{% for e in a.envs %}
+  <div class="card">
+    <h3>{{ e.dir }} {% if e.kind == 'prod' %}<span class="pill">prod</span>{% endif %}</h3>
+    {% for h in e.hosts %}<div><a href="https://{{ h }}/">{{ h }}</a></div>{% endfor %}
+    <div class="muted">runs <a href="/a/{{ a.name }}/c/{{ e.commit }}{% if e.branch %}?branch={{ e.branch }}{% endif %}"><code>{{ (e.commit or '')[:7] }}</code></a>{% if e.branch %} from <code>{{ e.branch }}</code>{% endif %} · {{ (e.rendered_at or '')[:16] | replace('T', ' ') }}</div>
+    <div style="margin-top:.3rem">{{ gate(e.security) }}{% if e.failing %} <span class="muted">{{ e.failing | map(attribute='rule') | join(', ') }}</span>{% endif %}</div>
+  </div>
+{% endfor %}
+</div>
+
+<h2>Branches</h2>
+<table>
+<tr><th>Branch</th><th>Head</th><th>Road to prod</th><th>Environment</th></tr>
+{% for b in branches %}
+<tr>
+  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill">dev</span>{% endif %}{% if not b.active %} <span class="pill s-skip">excluded</span>{% endif %}</td>
+  <td><a href="/a/{{ a.name }}/c/{{ b.head.sha }}?branch={{ b.name }}"><code>{{ b.head.short }}</code></a> <span class="muted">{{ b.head.message[:60] }}</span></td>
+  <td>{{ meter(b.head.stages) }}</td>
+  <td>{% if b.env %}{% for h in b.env.hosts[:1] %}<a href="https://{{ h }}/">{{ h }}</a>{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+
+<h2>Recent commits on <code>{{ a.dev_branch }}</code></h2>
+<table>
+<tr><th>Commit</th><th>Author</th><th>Road to prod</th></tr>
+{% for c in history %}
+<tr>
+  <td><a href="/a/{{ a.name }}/c/{{ c.sha }}?branch={{ c.branch }}"><code>{{ c.short }}</code></a> {{ c.message[:72] }}</td>
+  <td class="muted">{{ c.author }} · {{ c.when[:16] | replace('T', ' ') }}</td>
+  <td>{{ meter(c.stages) }}</td>
+</tr>
+{% endfor %}
+</table>
+<p class="muted">Stages: {% for k, label in STAGES %}{{ label }}{% if not loop.last %} › {% endif %}{% endfor %}. ✓ done · ⚠ warning · ✗ failed or blocking · ◌ in progress · ○ not reached · ⊘ skipped. A wavy underline marks a stage something would block at prod.</p>

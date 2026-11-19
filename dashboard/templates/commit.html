@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ c.short }} · {{ a.name }} · cicd-dashboard{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">{{ a.tenant }}</a> › <a href="/a/{{ a.name }}">{{ a.name }}</a> › <a href="{{ FORGE }}/{{ c.repo }}">{{ c.repo }}</a> › <a href="{{ FORGE }}/{{ c.repo }}/src/branch/{{ c.branch }}">{{ c.branch }}</a> › <code>{{ c.short }}</code></div>
+<div hx-get="/a/{{ a.name }}/c/{{ c.sha }}/fragment?branch={{ c.branch }}" hx-trigger="sse:changed" hx-swap="innerHTML">
+{% include "_commit_body.html" %}
+</div>
+{% endblock %}

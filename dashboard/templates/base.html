@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}cicd-dashboard{% endblock %}</title>
+<script src="/static/htmx.min.js"></script>
+<script src="/static/sse.min.js"></script>
+<style>
+  :root { --ok:#1a7f37; --warn:#9a6700; --fail:#cf222e; --muted:#6e7781; --line:#d0d7de; --bg:#fff; --fg:#1f2328; --chip:#f6f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --ok:#3fb950; --warn:#d29922; --fail:#f85149; --muted:#8b949e; --line:#30363d; --bg:#0d1117; --fg:#e6edf3; --chip:#161b22; } }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.45 system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
+  header { padding: .7rem 1.2rem; border-bottom: 1px solid var(--line); display: flex; gap: 1rem; align-items: baseline; }
+  header .brand { font-weight: 700; } header .live { margin-left: auto; color: var(--muted); font-size: .85rem; }
+  main { padding: 1rem 1.2rem 3rem; max-width: 84rem; }
+  a { color: inherit; } .muted { color: var(--muted); } code { font-size: .9em; }
+  .crumbs { color: var(--muted); margin-bottom: .6rem; } .crumbs a { text-decoration: none; } .crumbs a:hover { text-decoration: underline; }
+  h1 { font-size: 1.35rem; margin: .2rem 0 .8rem; } h2 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: .85rem; color: var(--muted); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .8rem; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: .7rem .9rem; background: var(--chip); }
+  .card h3 { margin: 0 0 .3rem; font-size: 1rem; }
+  .pill { display: inline-block; padding: 0 .45rem; border-radius: 999px; font-size: .8rem; border: 1px solid var(--line); }
+  .s-ok { color: var(--ok); } .s-warn { color: var(--warn); } .s-fail { color: var(--fail); } .s-todo, .s-skip { color: var(--muted); }
+  .meter { display: inline-flex; gap: 2px; font-size: 1.05rem; letter-spacing: 0; white-space: nowrap; }
+  .meter .g { width: 1.15em; text-align: center; } .meter .g.preview { text-decoration: underline wavy var(--fail); }
+  .spin { display: inline-block; animation: spin 1.1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  .road { display: flex; flex-wrap: wrap; gap: 0; margin: .8rem 0 1.2rem; }
+  .step { flex: 1 1 7.2rem; min-width: 7.2rem; padding: .55rem .5rem; border-top: 4px solid var(--line); position: relative; }
+  .step.ok { border-top-color: var(--ok); } .step.warn { border-top-color: var(--warn); } .step.fail { border-top-color: var(--fail); }
+  .step.run { border-top-color: var(--warn); border-top-style: dashed; }
+  .step .gl { font-size: 1.4rem; line-height: 1; } .step .lb { font-weight: 600; font-size: .9rem; margin: .2rem 0; }
+  .step .dt { font-size: .8rem; color: var(--muted); word-break: break-word; }
+  .step .pv { font-size: .78rem; color: var(--fail); margin-top: .25rem; }
+  .prodside { background: color-mix(in srgb, var(--chip) 70%, transparent); }
+  .rule { border-left: 3px solid var(--warn); padding: .4rem .7rem; background: var(--chip); margin: .6rem 0; }
+  .who { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; }
+</style>
+</head>
+<body hx-ext="sse" sse-connect="/events">
+<header><span class="brand"><a href="/" style="text-decoration:none">cicd-dashboard</a></span>
+<span class="muted">owner's view · cicd-ref-arch</span>
+<span class="live" title="pages refresh themselves when something changes">● live · {{ VERSION }} ({{ COMMIT[:7] }})</span></header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

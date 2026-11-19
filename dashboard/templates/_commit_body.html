@@ -1,0 +1,45 @@
+{% from "_macros.html" import glyph, gate %}
+<h1><code>{{ c.short }}</code> {{ c.message }}</h1>
+<div class="muted">{{ c.author }} · {{ c.when[:16] | replace('T', ' ') }} · <a href="{{ FORGE }}/{{ c.repo }}/commit/{{ c.sha }}">view on the forge</a></div>
+
+<div class="road">
+{% for s in c.stages %}
+  <div class="step {{ s.state }}{% if s.key in PROD_SIDE %} prodside{% endif %}">
+    <div class="gl">{{ glyph(s) }}</div>
+    <div class="lb">{% if s.href %}<a href="{{ s.href }}">{{ s.label }}</a>{% else %}{{ s.label }}{% endif %}</div>
+    <div class="dt">{{ s.detail }}</div>
+    {% if s.preview %}<div class="pv">✗ {{ s.preview }}</div>{% endif %}
+  </div>
+{% endfor %}
+</div>
+
+{% if f.failing %}
+<h2>Findings over the threshold</h2>
+<p class="muted">Reported only in {{ f.deploy.env_dir if f.deploy else 'dev' }}; each one blocks a promotion to prod until it is fixed or recorded as a false positive (VEX, an ignore with a reason and an expiry, or <code>.gitleaksignore</code>).</p>
+<table><tr><th>Severity</th><th>Category</th><th>Rule</th><th>Where</th><th>Fix</th></tr>
+{% for x in f.failing %}
+<tr><td class="s-fail">{{ x.severity }}</td><td>{{ x.category }}</td><td><code>{{ x.rule }}</code></td><td><code>{{ x.package or x.location }}{% if x.version %} {{ x.version }}{% endif %}</code></td><td>{% if x.fixed_in %}fixed in {{ x.fixed_in | join(', ') }}{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if f.promotion %}
+{% set p = f.promotion %}{% set pr = p.pr or {} %}
+<h2>Promotion <code>{{ p.id }}</code></h2>
+<div class="who">
+  <span class="muted">Code by</span><span>{{ c.author }}</span>
+  <span class="muted">Requested by</span><span>{{ p.requested_by }}{% if p.reason %} <span class="muted">: {{ p.reason }}</span>{% endif %}</span>
+  <span class="muted">Pull request</span><span>{% if pr %}<a href="{{ pr.url }}">#{{ pr.number }}</a> opened by {{ pr.author }} · {{ pr.state }}{% if pr.merged %}, merged by {{ pr.merged_by }}{% endif %}{% else %}none{% endif %}</span>
+  <span class="muted">Approved by</span><span>{{ (pr.approvers or []) | join(', ') or '—' }}</span>
+  <span class="muted">Not before</span><span>{{ p.not_before }}</span>
+  {% if p.security %}<span class="muted">Security at apply</span><span>{{ p.security }}</span>{% endif %}
+</div>
+<div class="rule"><strong>Two people for prod.</strong> The approval or the merge must come from someone other than <strong>{{ p.requested_by }}</strong> (who requested it){% if pr.author and pr.author != p.requested_by %} and <strong>{{ pr.author }}</strong> (who opened the PR){% endif %}. Forgejo would let the requester merge it; the platform would refuse to apply it. Writing the code doesn't disqualify anyone.</div>
+{% endif %}
+
+{% if f.jobs %}
+<h2>Runs</h2>
+<table><tr><th>Job</th><th>Status</th></tr>
+{% for name, j in f.jobs.items() %}<tr><td>{% if j.url %}<a href="{{ j.url }}">{{ name }}</a>{% else %}{{ name }}{% endif %}</td><td>{{ j.status }}</td></tr>{% endfor %}
+</table>
+{% endif %}
