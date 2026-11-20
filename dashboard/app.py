@@ -215,6 +215,8 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
 def fingerprint() -> str:
     """Changes whenever anything the pages show could have changed."""
     h = hashlib.sha1(model.state_repo.head().encode())
+    for pr in model.forge.get(f"/repos/{STATE_REPO}/pulls?state=all&limit=20", ttl=4) or []:   # promotions and approvals
+        h.update(f"{pr['number']}:{pr['state']}:{pr.get('updated_at')}".encode())
     for a in model.apps():
         for repo in a.repos:
             tasks = model.forge.get(f"/repos/{repo}/actions/tasks?limit=20", ttl=4) or {}

@@ -5,6 +5,8 @@ model rebuilt from them, cached for a few seconds.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import io
 import json
 import os
@@ -68,7 +70,7 @@ class Env:
 class Promotion:
     id: str
     app: str
-    state: str          # pending | done
+    state: str          # requested (PR open) | pending (merged, not yet applied) | done
     commit: str | None
     image: str
     not_before: str
@@ -122,6 +124,30 @@ class StateRepo:
         return b["commit"]["id"]
 
     def load(self) -> State:
+        """The state at the branch head (cached per head), plus promotions still waiting in their
+        PRs: those live on promote/<id> branches until merged, so they aren't in the head yet."""
+        base = self._load_head()
+        st = dataclasses.replace(base, promotions=base.promotions + self._requested(base))
+        self._attach_prs(st)
+        return st
+
+    def _requested(self, base: State) -> list[Promotion]:
+        known = {p.id for p in base.promotions}
+        prs = self.forge.get(f"/repos/{self.repo}/pulls?state=open&limit=50", ttl=15) or []
+        out = []
+        for pr in prs:
+            ref = pr["head"]["ref"]
+            if not ref.startswith("promote/") or ref[len("promote/"):] in known:
+                continue
+            pid = ref[len("promote/"):]
+            raw = self.forge.get(f"/repos/{self.repo}/raw/promotions/pending/{pid}/promotion.yaml?ref={pr['head']['sha']}",
+                                 ttl=3600, raw=True)
+            d = yaml.safe_load(raw) if raw else None
+            if d and d.get("cluster") == self.cluster:
+                out.append(promotion_of(d, "requested"))
+        return out
+
+    def _load_head(self) -> State:
         head = self.head()
         if self._state and self._state.head == head:
             return self._state
@@ -135,7 +161,6 @@ class StateRepo:
                 if name.startswith(("tenants/", "envs/", "promotions/", "clusters/")):
                     files[name] = tar.extractfile(m).read()
         self._state = parse_state(head, files, self.cluster)
-        self._attach_prs(self._state)
         return self._state
 
     def _attach_prs(self, st: State):
@@ -176,6 +201,13 @@ class StateRepo:
         return json.loads(raw) if raw else None
 
 
+def promotion_of(d: dict, state: str) -> Promotion:
+    return Promotion(
+        id=d["id"], app=d["app"], state=state, commit=d.get("commit"), image=d["image"],
+        not_before=d.get("notBefore", ""), requested_by=d.get("requestedBy", ""), reason=d.get("reason", ""),
+        approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt"))
+
+
 def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
     y = lambda p: yaml.safe_load(files[p]) if p in files else None  # noqa: E731
     tenants = {}
@@ -214,10 +246,7 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
         d = yaml.safe_load(files[p])
         if d.get("cluster") != cluster:
             continue
-        promotions.append(Promotion(
-            id=d["id"], app=d["app"], state=m.group(1), commit=d.get("commit"), image=d["image"],
-            not_before=d.get("notBefore", ""), requested_by=d.get("requestedBy", ""), reason=d.get("reason", ""),
-            approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt")))
+        promotions.append(promotion_of(d, m.group(1)))
     return State(head=head, cluster=y(f"clusters/{cluster}/cicd-cluster.yaml") or {}, tenants=tenants,
                  envs=envs, promotions=promotions, configs=configs, paused=paused,
                  limits=y("tenants/_limits.yaml") or {}, fetched=time.time())
