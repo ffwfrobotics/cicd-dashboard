@@ -42,6 +42,9 @@ class AppInfo:
     dev_branch: str
     exclude: list[str]
     envs: list[Env] = field(default_factory=list)
+    status: str = "approved"     # pending: enrolled through the dashboard, branch environments only until an admin approves
+    requested_by: str = ""
+    approved: dict | None = None  # {by, at}
 
     def env(self, d: str) -> Env | None:
         return next((e for e in self.envs if e.dir == d), None)
@@ -97,7 +100,9 @@ class Model:
             out.append(AppInfo(
                 name=name, tenant=spec.get("tenant", "default"),
                 repos=spec.get("repos") or [spec["repo"]], path=spec.get("path", "."), owners=spec.get("owners", []),
-                dev_branch=(cfg.get("dev") or {}).get("branch", "master"),
+                dev_branch=(cfg.get("dev") or {}).get("branch") or spec.get("defaultBranch") or "master",
+                status=spec.get("status", "approved"), requested_by=spec.get("requestedBy", ""),
+                approved=spec.get("approved"),
                 exclude=(cfg.get("branch") or {}).get("exclude", ["promote/*"]),
                 envs=sorted(st.envs.get(name, []), key=lambda e: (e.kind != "prod", e.kind != "dev", e.dir))))
         return out
@@ -142,6 +147,21 @@ class Model:
             jobs[t["name"]] = t
         return out
 
+    def contract(self, repo: str, sha: str) -> dict | None:
+        """The intake step's commit statuses (cicd/contract, cicd/contract/<check>), latest of each."""
+        latest: dict[str, dict] = {}
+        for x in self.forge.get(f"/repos/{repo}/statuses/{sha}?limit=50", ttl=30) or []:
+            ctx = x.get("context") or ""
+            if ctx.startswith("cicd/contract") and (ctx not in latest or x["id"] > latest[ctx]["id"]):
+                latest[ctx] = x
+        top = latest.pop("cicd/contract", None)
+        if not top:
+            return None
+        items = [{"check": k.rsplit("/", 1)[-1], "state": v.get("status") or v.get("state"), "description": v.get("description", "")}
+                 for k, v in sorted(latest.items()) if v["id"] > top["id"]]    # posted after the summary: this run's
+        return {"state": top.get("status") or top.get("state"), "summary": top.get("description", ""),
+                "url": top.get("target_url"), "items": items}
+
     def facts(self, app: AppInfo, repo: str, commit: dict, branch: str, jobs=None, deploys=None) -> Facts:
         sha = commit["sha"] if "sha" in commit else commit["id"]
         c = commit.get("commit", commit)
@@ -153,6 +173,8 @@ class Model:
                   branch_excluded=bool(branch) and branch != app.dev_branch
                   and any(fnmatch.fnmatch(branch, p) for p in app.exclude))
         f.jobs = {k: {"status": v["status"], "url": v.get("url")} for k, v in f.jobs.items()}
+        if repo != STATE_REPO:
+            f.contract = self.contract(repo, sha)
         st = self.state()
         if branch and branch != app.dev_branch:
             if branch in st.paused.get(app.name, {}):

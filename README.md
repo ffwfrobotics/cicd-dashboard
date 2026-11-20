@@ -93,7 +93,11 @@ Both use Secret `dashboard-platform` (dev and prod only, created by hand), mount
 |---|---|---|
 | Request a promotion | write on the app repo | Dispatches the app's own pipeline (`action: request-promotion`). You are recorded as the requester. |
 | Pause, resume, remove a branch environment | write on the app repo | Dispatches the app's own pipeline (`action: pause` and so on). The state repo commit names you. |
+| Add an app | anyone signed in | **Add app**: imports a repo (or creates an empty one) as you, adds the webhook, and enrolls it as **pending**: branch environments only. See cicd-ref-arch `docs/enroll.md`. The platform token writes the pending `tenants/<app>.yaml`. |
+| Approve an app | write on the platform repo | A commit to `tenants/<app>.yaml` as you. That unlocks the dev environment and promotion. |
 | Approve, or approve by merging, a promotion | anyone but its requester and the PR's author | A review or merge on the state repo's PR, as you. The dashboard won't offer it to the requester, and says why. |
+
+**Contract.** Each commit's first Develop step is the platform's contract check: commit statuses `cicd/contract*` on the app repo, with a hint for each rule that doesn't hold. "Nothing to run" (no Dockerfile) stops the commit there.
 
 **Tenant limit.** At most 16 branch environments per tenant are in CI/CD at a time; set in cicd-ref-arch `tenants/_limits.yaml`. A branch over the limit, or a paused one, isn't tested, built or deployed, and the dashboard says why.
 

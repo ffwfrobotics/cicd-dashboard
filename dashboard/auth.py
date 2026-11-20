@@ -36,7 +36,7 @@ FORGE = os.environ.get("FORGE_URL", "https://forge.goblincorps.com").rstrip("/")
 CLIENT_ID = setting("OAUTH_CLIENT_ID")
 CLIENT_SECRET = setting("OAUTH_CLIENT_SECRET")
 SESSION_KEY = (setting("SESSION_KEY") or secrets.token_urlsafe(32)).encode()
-SCOPES = os.environ.get("OAUTH_SCOPES", "openid profile email read:user write:repository write:issue")
+SCOPES = os.environ.get("OAUTH_SCOPES", "openid profile email read:user read:organization write:repository write:issue")
 COOKIE = "cicd_dash"
 ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
 

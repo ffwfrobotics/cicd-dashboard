@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 STAGES = [
     ("committed", "Committed"),
+    ("contract", "Contract"),
     ("tests", "Tests"),
     ("build", "Build"),
     ("deployed", "Deployed"),
@@ -27,7 +28,7 @@ STAGES = [
 PROD_SIDE = ("promotion", "approved", "scheduled", "prod")
 # Fewer, bigger checkmarks: the stages grouped by who answers for them (key, label, role, stage keys).
 PHASES = [
-    ("develop", "Develop", "Developers: commit, test, build, run", ("committed", "tests", "build", "deployed")),
+    ("develop", "Develop", "Developers: commit, test, build, run", ("committed", "contract", "tests", "build", "deployed")),
     ("assess", "Assess", "Sysadmins: scans, self-assessment, IT Security's findings", ("security", "assessed", "review")),
     ("release", "Release", "System owner: approves what goes to prod", PROD_SIDE),
 ]
@@ -64,6 +65,7 @@ class Facts:
     not_in_cicd: str = ""             # this branch's pushes skip CI/CD: "paused" or "waiting" (tenant limit)
     not_in_cicd_why: str = ""
     assessment: dict | None = None    # the commit's OSCAL self-assessment (summary)
+    contract: dict | None = None      # intake's commit statuses: {state, summary, url, items: [{check, state, description}]}
     external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
 
@@ -83,6 +85,23 @@ def destiny(f: Facts) -> list[Stage]:
 
     st["committed"].state = "ok"
     st["committed"].detail = f.author
+
+    # the contract (intake, the pipeline's first step): what to fix, or that there's nothing to run
+    c, route = st["contract"], job_state(f.jobs.get("route"))
+    if f.contract:
+        c.state = {"success": "ok", "warning": "warn", "failure": "fail"}.get(f.contract["state"], "todo")
+        c.detail = "met" if c.state == "ok" else f.contract["summary"] if c.state == "warn" else "nothing to run"
+        c.tip = "\n".join(i["description"] for i in f.contract["items"]) or f.contract["summary"]
+        c.href = f.contract.get("url")
+    elif route == "run":
+        c.state, c.detail = "run", "checking"
+    elif route in ("ok", "fail"):
+        c.state, c.detail, c.tip = "skip", "not checked", "This run predates the contract check"
+    if c.state == "fail":
+        for k in ("tests", "build", "deployed"):
+            st[k].state, st[k].detail = "skip", ""
+        st["tests"].detail, st["tests"].tip = "nothing to run", f.contract["summary"]
+        return [st[k] for k, _ in STAGES]
 
     if f.not_in_cicd and not f.deploy:
         for k in ("tests", "build", "security", "deployed"):

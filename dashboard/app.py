@@ -24,13 +24,14 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from . import auth, platform
+from . import enroll as enrolling
 from . import compliance as comp
 from .destiny import PROD_SIDE, STAGES, phases
 from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -52,7 +53,7 @@ def ts(value) -> Markup:
 
 
 templates.env.filters["ts"] = ts
-templates.env.globals.update(phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
+templates.env.globals.update(STATE_REPO=STATE_REPO, phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
                              COMMIT=os.environ.get("APP_COMMIT", "dev"), FORGE=os.environ.get("FORGE_URL", "https://forge.goblincorps.com"))
 model = Model()
 
@@ -65,6 +66,7 @@ def page(request: Request, name: str, **ctx):
     if "a" in ctx and user is not None:
         ctx.setdefault("can_write", can_write(user, ctx["a"]))
     ctx.setdefault("can_write", False)
+    ctx.setdefault("platform_admin", user is not None and platform_admin(user))
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -80,6 +82,20 @@ def can_write(user, a) -> bool:
         return hit[1]
     with auth.as_user(user) as c:
         r = c.get(f"/repos/{a.repos[0]}")
+        ok = r.status_code == 200 and bool(r.json().get("permissions", {}).get("push"))
+    _perm_cache[key] = (time.time(), ok)
+    return ok
+
+
+def platform_admin(user) -> bool:
+    """Write on the platform repo: approves apps (and, in the forge, everything else there)."""
+    import time
+    key = (user.login, STATE_REPO)
+    hit = _perm_cache.get(key)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    with auth.as_user(user) as c:
+        r = c.get(f"/repos/{STATE_REPO}")
         ok = r.status_code == 200 and bool(r.json().get("permissions", {}).get("push"))
     _perm_cache[key] = (time.time(), ok)
     return ok
@@ -503,6 +519,56 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
         return back(url, f"{verb} failed: {forge_error(r)}")
     model.forge._cache.clear()
     return back(url, "Approved." if verb == "approve" else "Merged. Applied when due.")
+
+
+# ---------------------------------------------------------------- adding an app
+
+
+def hook_url(request: Request) -> str:
+    return (os.environ.get("DASHBOARD_URL") or f"https://{request.url.netloc}").rstrip("/") + "/hooks/forge"
+
+
+@app.get("/enroll", response_class=HTMLResponse)
+def enroll_page(request: Request):
+    user = auth.current(request)
+    if user is None:
+        return RedirectResponse(f"/auth/login?next=/enroll", status_code=303) if auth.ENABLED else back("/", "Adding an app needs sign-in")
+    with auth.as_user(user) as c:
+        owners = enrolling.owners(c, user.login)
+    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True}
+    return page(request, "enroll.html", owners=owners, form=form)
+
+
+@app.post("/enroll", response_class=HTMLResponse)
+def enroll_post(request: Request, source: str = Form(""), name: str = Form(""), owner: str = Form(""),
+                mirror: str = Form(""), private: str = Form(""), source_token: str = Form(""), csrf: str = Form("")):
+    """Import a repo and enroll it, pending (dashboard/enroll.py says who does each step)."""
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    name = name.strip().lower()
+    with auth.as_user(user) as c:
+        try:
+            done = enrolling.enroll(c, model.forge, user.login, name=name, source=source.strip(), owner=owner,
+                                    mirror=bool(mirror), private=bool(private), source_token=source_token,
+                                    hook_url=hook_url(request))
+        except enrolling.EnrollError as e:
+            owners = enrolling.owners(c, user.login)
+            form = {"source": source, "name": name, "owner": owner, "mirror": bool(mirror), "private": bool(private)}
+            return page(request, "enroll.html", owners=owners, form=form, msg=str(e))
+    return back(f"/a/{name}", "Added: " + ", ".join(done) + ".")
+
+
+@app.post("/a/{name}/approve")
+def approve(request: Request, name: str, csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    app_or_404(name)
+    with auth.as_user(user) as c:
+        try:
+            msg = enrolling.approve(c, model.forge, user.login, name)
+        except enrolling.EnrollError as e:
+            return back(f"/a/{name}", str(e))
+    return back(f"/a/{name}", msg)
 
 
 # ---------------------------------------------------------------- the forge's webhook

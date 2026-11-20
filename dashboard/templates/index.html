@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import gate, score %}
 {% block body %}
+{% if user %}<div class="toolbar"><a class="btn primary" href="/enroll" title="Import a repository and enroll it: branch environments until an admin approves">Add app</a></div>{% endif %}
 {% for tenant, apps in tenants.items() %}
 <h2><span class="muted">Tenant</span> {{ tenant }}</h2>
 <div class="cards">
 {% for a in apps %}
   <div class="card">
-    <h3><a href="/a/{{ a.name }}">{{ a.name }}</a></h3>
+    <h3><a href="/a/{{ a.name }}">{{ a.name }}</a>{% if a.status == 'pending' %} <span class="pill s-warn" title="Requested by {{ a.requested_by }}: branch environments only until an admin approves">pending</span>{% endif %}</h3>
     <div class="muted small">{% for r in a.repos %}<code>{{ r }}</code>{% if a.path != '.' %} <code>{{ a.path }}</code>{% endif %} {% endfor %}</div>
     <table>
     {% for e in a.envs if e.kind != 'branch' %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Add app · {{ BRAND }}{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Applications</a></div>
+<h1>Add app</h1>
+<form class="panel fields" method="post" action="/enroll">
+  {{ csrf(user) }}
+  <label title="An https clone URL from any forge (imported here), a repository on this forge (used as it is), or empty for a new empty repository">Source
+    <input name="source" size="60" value="{{ form.source }}" placeholder="https://github.com/you/app.git" autofocus></label>
+  <label title="Lowercase letters, digits, dashes. It becomes the repository name and the app's host names">Name
+    <input name="name" size="24" value="{{ form.name }}" pattern="[a-z][a-z0-9-]{1,23}[a-z0-9]" required></label>
+  <label title="Where the repository is created on this forge">Owner
+    <select name="owner">{% for o in owners %}<option{% if o == form.owner %} selected{% endif %}>{{ o }}</option>{% endfor %}</select></label>
+  <label class="check" title="Keep pulling from the source (read-only here), instead of a one-time import"><input type="checkbox" name="mirror" value="1"{% if form.mirror %} checked{% endif %}>Mirror</label>
+  <label class="check" title="Visible only to the owner's members"><input type="checkbox" name="private" value="1"{% if form.private %} checked{% endif %}>Private</label>
+  <label title="Only for a private source: a read token there. Used once to import (kept by the forge for a mirror)">Source token
+    <input name="source_token" type="password" size="24" autocomplete="off"></label>
+  <button class="primary" title="Imports, enrolls as pending and starts the first run: branch environments until an admin approves">Add</button>
+</form>
+<p class="muted small" title="docs/contract.md in the platform repo: what an app provides">
+  <a href="{{ FORGE }}/{{ STATE_REPO }}/src/branch/master/docs/contract.md">Contract</a> ·
+  <a href="{{ FORGE }}/{{ STATE_REPO }}/src/branch/master/docs/enroll.md">Enrollment</a></p>
+{% endblock %}

@@ -136,3 +136,23 @@ class Phases(unittest.TestCase):
     def test_unpromotable_commit_skips_release_quietly(self):
         p = self.ph(facts(branch="feat", deploy=LIVE, security={"status": "pass"}))
         self.assertEqual((p["release"].state, p["release"].detail), ("skip", ""))
+
+
+class Contract(unittest.TestCase):
+    def test_nothing_to_run_stops_develop(self):
+        c = {"state": "failure", "summary": "Nothing to run: add a Dockerfile", "url": "u",
+             "items": [{"check": "dockerfile", "state": "failure", "description": "rule 9: Nothing to run"}]}
+        f = facts(jobs={"route": {"status": "success"}, "test": {"status": "skipped"}}, contract=c)
+        s = states(f)
+        self.assertEqual((s["contract"], s["tests"], s["build"]), ("fail", "skip", "skip"))
+        p = {x.key: x for x in phases(destiny(f))}
+        self.assertEqual((p["develop"].state, p["develop"].detail), ("fail", "Contract: nothing to run"))
+
+    def test_hints_warn_but_the_run_goes_on(self):
+        c = {"state": "warning", "summary": "1 to fix, 2 assumed", "url": "u", "items": []}
+        st = {x.key: x for x in destiny(facts(jobs={"route": {"status": "success"}, "test": {"status": "running"}}, contract=c))}
+        self.assertEqual((st["contract"].state, st["contract"].detail, st["tests"].state), ("warn", "1 to fix, 2 assumed", "run"))
+
+    def test_runs_before_the_check_existed(self):
+        self.assertEqual(states(facts(jobs={"route": {"status": "success"}}))["contract"], "skip")
+        self.assertEqual(states(facts())["contract"], "todo")
