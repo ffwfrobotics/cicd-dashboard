@@ -46,6 +46,12 @@ class AppInfo:
     requested_by: str = ""
     approved: dict | None = None  # {by, at}
 
+    @property
+    def dev_env_branch(self) -> str:
+        """The branch that deploys to dev: none while the app is pending (its default branch then
+        gets a branch environment, like any other)."""
+        return "" if self.status == "pending" else self.dev_branch
+
     def env(self, d: str) -> Env | None:
         return next((e for e in self.envs if e.dir == d), None)
 
@@ -167,16 +173,16 @@ class Model:
         c = commit.get("commit", commit)
         author = (c.get("author") or {}).get("name", "?")
         when = (c.get("author") or {}).get("date") or c.get("timestamp", "")
-        f = Facts(sha=sha, branch=branch, dev_branch=app.dev_branch, author=author, when=when,
+        f = Facts(sha=sha, branch=branch, dev_branch=app.dev_env_branch, author=author, when=when,
                   message=c.get("message", "").splitlines()[0] if c.get("message") else "",
                   jobs=(jobs if jobs is not None else self._jobs(repo, app.name)).get(sha, {}),
-                  branch_excluded=bool(branch) and branch != app.dev_branch
+                  branch_excluded=bool(branch) and branch != app.dev_env_branch
                   and any(fnmatch.fnmatch(branch, p) for p in app.exclude))
         f.jobs = {k: {"status": v["status"], "url": v.get("url")} for k, v in f.jobs.items()}
         if repo != STATE_REPO:
             f.contract = self.contract(repo, sha)
         st = self.state()
-        if branch and branch != app.dev_branch:
+        if branch and branch != app.dev_env_branch:
             if branch in st.paused.get(app.name, {}):
                 p = st.paused[app.name][branch]
                 f.not_in_cicd, f.not_in_cicd_why = "paused", f"Paused by {p.get('by', '?')}"
@@ -226,9 +232,9 @@ class Model:
         for repo in app.repos:
             jobs = self._jobs(repo, app.name)
             for b in self.forge.get(f"/repos/{repo}/branches?limit=50") or []:
-                env_dir = "dev" if b["name"] == app.dev_branch else f"branch-{branch_slug(app.name, b['name'])}"
+                env_dir = "dev" if b["name"] == app.dev_env_branch else f"branch-{branch_slug(app.name, b['name'])}"
                 head = self.commit_row(app, repo, b["commit"], b["name"], jobs, deploys)
-                excluded = b["name"] != app.dev_branch and any(fnmatch.fnmatch(b["name"], p) for p in app.exclude)
+                excluded = b["name"] != app.dev_env_branch and any(fnmatch.fnmatch(b["name"], p) for p in app.exclude)
                 paused = self.state().paused.get(app.name, {}).get(b["name"])
                 rows.append(BranchRow(name=b["name"], repo=repo, env=app.env(env_dir), head=head, active=not excluded,
                                       paused=paused, waiting=head.not_in_cicd == "waiting"))

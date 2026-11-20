@@ -27,11 +27,11 @@
 <tr><th>Branch</th><th>Head</th><th>Pipeline</th><th>Environment</th>{% if user and can_write %}<th></th>{% endif %}</tr>
 {% for b in branches %}
 <tr>
-  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill plain">dev</span>{% endif %}{% if not b.active %} <span class="pill plain" title="Matches an exclude pattern in cicd.yaml">excluded</span>{% endif %}{% if b.paused %} <span class="pill plain" title="By {{ b.paused.by }}, {{ b.paused.at }}">paused</span>{% endif %}{% if b.waiting %} <span class="pill s-warn" title="The tenant is at its branch environment limit">waiting</span>{% endif %}</td>
+  <td><code>{{ b.name }}</code>{% if b.name == a.dev_env_branch %} <span class="pill plain">dev</span>{% endif %}{% if not b.active %} <span class="pill plain" title="Matches an exclude pattern in cicd.yaml">excluded</span>{% endif %}{% if b.paused %} <span class="pill plain" title="By {{ b.paused.by }}, {{ b.paused.at }}">paused</span>{% endif %}{% if b.waiting %} <span class="pill s-warn" title="The tenant is at its branch environment limit">waiting</span>{% endif %}</td>
   <td><a href="/a/{{ a.name }}/c/{{ b.head.sha }}?branch={{ b.name }}"><code>{{ b.head.short }}</code></a> <span class="muted">{{ b.head.message[:60] }}</span></td>
   <td>{{ meter(b.head.stages) }}</td>
   <td>{% if b.env %}{% for h in b.env.hosts[:1] %}<a href="https://{{ h }}/">{{ h }}</a>{% endfor %}{% endif %}</td>
-  {% if user and can_write %}<td class="row-actions">{% if b.name != a.dev_branch and b.active %}
+  {% if user and can_write %}<td class="row-actions">{% if b.name != a.dev_env_branch and b.active %}
     {% for act, label, cls in ([('resume', 'Resume', '')] if b.paused else [('pause', 'Pause', '')] + ([('remove-env', 'Remove', 'danger')] if b.env else [])) %}
     <form class="inline" method="post" action="/a/{{ a.name }}/act"><input type="hidden" name="action" value="{{ act }}"><input type="hidden" name="branch" value="{{ b.name }}">{{ csrf(user) }}<button class="{{ cls }}" title="{{ {'pause': 'Stop CI/CD for this branch and free its environment', 'resume': 'Run CI/CD on this branch again', 'remove-env': 'Remove the environment; the next push recreates it'}[act] }}">{{ label }}</button></form>
     {% endfor %}{% endif %}</td>{% endif %}
