@@ -233,7 +233,8 @@ def osv_query(packages: list[dict]) -> list[dict]:
             fixed = [e["fixed"] for a in v.get("affected", []) for rg in a.get("ranges", []) for e in rg.get("events", []) if "fixed" in e]
             o["fixed"] = fixed[0] if fixed else ""
             sev = (v.get("database_specific") or {}).get("severity", "")
-            o["severity"] = sev.lower() if sev else "high"
+            sev = {"moderate": "medium"}.get(sev.lower(), sev.lower()) if sev else "high"
+            o["severity"] = sev if sev in ("critical", "high", "medium", "low") else "high"
     return out
 
 
