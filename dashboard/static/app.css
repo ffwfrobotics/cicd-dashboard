@@ -71,14 +71,20 @@ tr.group td { background: var(--surface); font-weight: 600; font-size: .85rem; }
 .meter { display: inline-flex; gap: 3px; font-size: 1.05rem; white-space: nowrap; }
 .meter .g { position: relative; line-height: 0; }
 .meter .g.blocked::after { content: ""; position: absolute; right: -2px; top: -2px; width: .42rem; height: .42rem; border-radius: 50%; background: var(--fail); box-shadow: 0 0 0 1.5px var(--bg); }
-.road { display: flex; flex-wrap: wrap; margin: 1rem 0 1.2rem; }
-.step { flex: 1 1 6.8rem; min-width: 6.8rem; padding: .55rem .5rem .6rem; border-top: 3px solid var(--line); display: flex; flex-direction: column; gap: .15rem; }
-.step.ok { border-top-color: var(--ok); } .step.warn { border-top-color: var(--warn); } .step.fail { border-top-color: var(--fail); }
-.step.run { border-top-color: var(--warn); border-top-style: dashed; }
-.step .i { font-size: 1.25rem; } .step .lb { font-weight: 600; font-size: .88rem; } .step .lb a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
-.step .dt { font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
-.step.prodside { background: var(--surface); }
-.step.prodside.first { border-left: 1px solid var(--line); }
+.road { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .6rem; margin: 1rem 0 1.2rem; align-items: start; }
+.phase { border-top: 4px solid var(--line); padding: .6rem .7rem .7rem; }
+.phase.ok { border-top-color: var(--ok); } .phase.warn { border-top-color: var(--warn); } .phase.fail { border-top-color: var(--fail); }
+.phase.run { border-top-color: var(--warn); border-top-style: dashed; }
+.phase.prodside { background: var(--surface); }
+.phase summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: auto 1fr; column-gap: .5rem; align-items: center; }
+.phase summary::-webkit-details-marker { display: none; }
+.phase summary .i { font-size: 1.7rem; grid-row: span 2; }
+.phase summary .lb { font-weight: 650; font-size: 1rem; }
+.phase summary .dt, .phase summary .chips { grid-column: 2; }
+.phase .dt { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+.phase .steps { margin-top: .55rem; padding-top: .45rem; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: .3rem; }
+.phase .step { display: flex; align-items: baseline; gap: .4rem; font-size: .86rem; }
+.phase .step .lb a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 
 /* forms: labels above inputs, actions at the end */
 button, .btn { font: inherit; font-size: .85rem; padding: .22rem .7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); cursor: pointer; white-space: nowrap; }

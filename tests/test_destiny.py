@@ -2,7 +2,7 @@
 import datetime as dt
 import unittest
 
-from dashboard.destiny import Facts, destiny, overall
+from dashboard.destiny import Facts, destiny, overall, phases
 from dashboard.model import branch_slug
 
 NOW = dt.datetime(2026, 11, 19, 20, 0, tzinfo=dt.timezone.utc)
@@ -107,3 +107,28 @@ class Slug(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Phases(unittest.TestCase):
+    def ph(self, f):
+        return {p.key: p for p in phases(destiny(f))}
+
+    def test_three_phases_cover_every_stage_once(self):
+        keys = [s.key for p in phases(destiny(facts())) for s in p.stages]
+        self.assertEqual(sorted(keys), sorted(s.key for s in destiny(facts())))
+        self.assertEqual(list(self.ph(facts())), ["develop", "assess", "release"])
+
+    def test_running_tests_make_develop_run(self):
+        p = self.ph(facts(jobs={"test": {"status": "running"}}))
+        self.assertEqual((p["develop"].state, p["assess"].state, p["release"].state), ("run", "todo", "todo"))
+
+    def test_failure_names_the_step(self):
+        p = self.ph(facts(jobs={"test": {"status": "failure"}}))
+        self.assertEqual((p["develop"].state, p["develop"].detail), ("fail", "Tests: failed"))
+
+    def test_findings_warn_assess_and_blockers_reach_release(self):
+        f = facts(deploy=LIVE, security={"status": "warn"},
+                  failing=[{"rule": "GHSA-x", "category": "vuln", "severity": "high"}])
+        p = self.ph(f)
+        self.assertEqual((p["develop"].state, p["assess"].state), ("ok", "warn"))
+        self.assertEqual(p["release"].blockers, [{"category": "vuln", "rules": ["GHSA-x"]}])

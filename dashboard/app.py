@@ -25,12 +25,12 @@ from markupsafe import Markup, escape
 
 from . import auth
 from . import compliance as comp
-from .destiny import PROD_SIDE, STAGES
+from .destiny import PROD_SIDE, STAGES, phases
 from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -52,7 +52,7 @@ def ts(value) -> Markup:
 
 
 templates.env.filters["ts"] = ts
-templates.env.globals.update(STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
+templates.env.globals.update(phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
                              COMMIT=os.environ.get("APP_COMMIT", "dev"), FORGE=os.environ.get("FORGE_URL", "https://forge.goblincorps.com"))
 model = Model()
 

@@ -15,8 +15,8 @@ STAGES = [
     ("committed", "Committed"),
     ("tests", "Tests"),
     ("build", "Build"),
-    ("security", "Security"),
     ("deployed", "Deployed"),
+    ("security", "Security"),
     ("assessed", "Assessed"),
     ("review", "Findings"),
     ("promotion", "Promotion"),
@@ -25,6 +25,12 @@ STAGES = [
     ("prod", "Prod"),
 ]
 PROD_SIDE = ("promotion", "approved", "scheduled", "prod")
+# Fewer, bigger checkmarks: the stages grouped by who answers for them (key, label, role, stage keys).
+PHASES = [
+    ("develop", "Develop", "Developers: commit, test, build, run", ("committed", "tests", "build", "deployed")),
+    ("assess", "Assess", "Sysadmins: scans, self-assessment, IT Security's findings", ("security", "assessed", "review")),
+    ("release", "Release", "System owner: approves what goes to prod", PROD_SIDE),
+]
 RUNNING = {"running", "waiting", "queued", "blocked"}
 
 
@@ -242,6 +248,39 @@ def assessment_gaps(a: dict) -> dict:
         bad = [e for e in o.get("evidence", []) if not e["holds"] and (e.get("selector") or "").split(":")[0] in BLOCKING_KINDS]
         (blocking if bad and o["coverage"] not in ("uncovered", "not-applicable") else other).append(o["id"])
     return {"blocking": blocking, "other": other}
+
+
+@dataclass
+class Phase:
+    key: str
+    label: str
+    role: str
+    stages: list[Stage]
+    state: str = "todo"
+    detail: str = ""
+    blockers: list[dict] = field(default_factory=list)
+
+    @property
+    def tip(self) -> str:
+        return " · ".join(f"{s.label}: {s.detail or s.state}" for s in self.stages)
+
+
+def phases(stages: list[Stage]) -> list[Phase]:
+    """The stages folded into PHASES. A phase takes its worst state; its detail is the stage that decides it."""
+    by = {s.key: s for s in stages}
+    out = []
+    for key, label, role, keys in PHASES:
+        ss = [by[k] for k in keys if k in by]
+        states = {s.state for s in ss}
+        state = next((x for x in ("fail", "run", "warn") if x in states), None)
+        if not state:
+            state = "ok" if "ok" in states else "todo" if "todo" in states else "skip"
+        # the deciding stage: the first one in that state, or (when done) the last one with something to say
+        pick = [s for s in ss if s.state == state] if state != "ok" else [s for s in reversed(ss) if s.detail and s.state == "ok"]
+        deciding = pick[0] if pick else None
+        detail = f"{deciding.label}: {deciding.detail}" if deciding and deciding.detail else (deciding.label if deciding and state != "ok" else "")
+        out.append(Phase(key, label, role, ss, state, detail, [b for s in ss for b in s.blockers]))
+    return out
 
 
 def overall(stages: list[Stage]) -> str:

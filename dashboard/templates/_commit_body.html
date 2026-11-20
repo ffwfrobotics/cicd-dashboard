@@ -3,14 +3,24 @@
 <div class="muted">{{ c.author }} · {{ c.when | ts }}</div>
 
 <div class="road">
-{% set ns = namespace(prod=false) %}
-{% for s in c.stages %}
-  <div class="step {{ s.state }}{% if s.key in PROD_SIDE %} prodside{% if not ns.prod %} first{% endif %}{% set ns.prod = true %}{% endif %}"{% if s.tip %} title="{{ s.tip }}"{% endif %}>
-    {{ icon(s.state) }}
-    <div class="lb">{% if s.href %}<a href="{{ s.href }}">{{ s.label }}</a>{% else %}{{ s.label }}{% endif %}</div>
-    {% if s.detail %}<div class="dt">{{ s.detail }}</div>{% endif %}
-    {% if s.blockers %}<div class="chips">{{ blockers(s) }}</div>{% endif %}
-  </div>
+{% for p in phases(c.stages) %}
+  <details class="phase {{ p.state }}{% if p.key == 'release' %} prodside{% endif %}"{% if p.state in ('fail', 'warn', 'run') or p.blockers %} open{% endif %}>
+    <summary title="{{ p.role }}">
+      {{ icon(p.state) }}
+      <div class="lb">{{ p.label }}</div>
+      {% if p.detail %}<div class="dt">{{ p.detail }}</div>{% endif %}
+      {% if p.blockers %}<div class="chips">{{ blockers(p) }}</div>{% endif %}
+    </summary>
+    <div class="steps">
+    {% for s in p.stages %}
+      <div class="step {{ s.state }}"{% if s.tip %} title="{{ s.tip }}"{% endif %}>
+        {{ icon(s.state) }}
+        <span class="lb">{% if s.href %}<a href="{{ s.href }}">{{ s.label }}</a>{% else %}{{ s.label }}{% endif %}</span>
+        {% if s.detail %}<span class="dt">{{ s.detail }}</span>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </details>
 {% endfor %}
 </div>
 

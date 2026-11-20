@@ -10,7 +10,7 @@
 {% for b in s.blockers %}<span class="pill s-fail" title="Blocks prod: {{ b.rules | join(', ') }}">{{ icon('fail') }}{{ BLOCKER.get(b.category, b.category | capitalize) }}{% if b.rules | length > 1 %} ×{{ b.rules | length }}{% endif %}</span>{% endfor %}
 {%- endmacro %}
 {% macro meter(stages) -%}
-<span class="meter">{% for s in stages %}<span class="g{% if s.blockers %} blocked{% endif %}">{{ icon(s.state, s.label ~ (': ' ~ s.detail if s.detail else '') ~ (' · ' ~ s.tip if s.tip else '') ~ (' · ' ~ blocked_tip(s) if s.blockers else '')) }}</span>{% endfor %}</span>
+<span class="meter">{% for p in phases(stages) %}<span class="g{% if p.blockers %} blocked{% endif %}">{{ icon(p.state, p.label ~ (': ' ~ p.detail if p.detail else '') ~ ' · ' ~ p.tip ~ (' · ' ~ blocked_tip(p) if p.blockers else '')) }}</span>{% endfor %}</span>
 {%- endmacro %}
 {% macro gate(sec) -%}
 {% set st = {'pass': 'ok', 'warn': 'warn', 'fail': 'fail'}.get(sec.status, 'todo') if sec else 'skip' %}
