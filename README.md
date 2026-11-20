@@ -82,6 +82,13 @@ The theme is served at `/theme.css` and cached for five minutes.
 
 **Configuration.** The client comes from Secret `dashboard-oauth`, which exists only in `dashboard-dev` and `dashboard` (prod) and is created by hand, never through git. It holds `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_ISSUER` and `SESSION_KEY`. It is mounted as files under `/var/run/secrets/dashboard-oauth` (not environment variables); a local run reads the same names from the environment. The registered redirect URIs are `https://dashboard[-dev].c-local.k.ffwf.net/auth/callback`, so use the https URL. Branch environments have no Secret and stay read-only.
 
+**The platform pipeline.** App repos hold no workflow and no token: the pipeline runs in cicd-ref-arch (`.forgejo/workflows/pipeline.yaml`). The dashboard:
+- receives each enrolled repo's push webhook at `POST /hooks/forge` (HMAC-signed) and dispatches the pipeline for it;
+- dispatches self-service actions for users with write on the app repo, naming them;
+- shows each app commit's jobs from the pipeline's runs, matched by their inputs.
+
+Both use Secret `dashboard-platform` (dev and prod only, created by hand), mounted under `/var/run/secrets/dashboard-platform`. It holds two files: `token`, a token that can dispatch workflows in the platform repo, and `hook-secret`, which `tools/enroll.py` puts on each app repo's webhook. Without the Secret the dashboard is read-only for self-service. Pushes still run within 5 minutes, because the platform's environments workflow dispatches any it missed.
+
 | Action | Who | How |
 |---|---|---|
 | Request a promotion | write on the app repo | Dispatches the app's own pipeline (`action: request-promotion`). You are recorded as the requester. |
