@@ -278,7 +278,8 @@ def phases(stages: list[Stage]) -> list[Phase]:
         # the deciding stage: the first one in that state, or (when done) the last one with something to say
         pick = [s for s in ss if s.state == state] if state != "ok" else [s for s in reversed(ss) if s.detail and s.state == "ok"]
         deciding = pick[0] if pick else None
-        detail = f"{deciding.label}: {deciding.detail}" if deciding and deciding.detail else (deciding.label if deciding and state != "ok" else "")
+        detail = "" if not deciding else deciding.detail if state == "ok" else \
+            f"{deciding.label}: {deciding.detail}" if deciding.detail else deciding.label
         out.append(Phase(key, label, role, ss, state, detail, [b for s in ss for b in s.blockers]))
     return out
 
