@@ -22,11 +22,26 @@ FORGE = os.environ.get("FORGE_URL", "https://forge.goblincorps.com").rstrip("/")
 STATE_REPO = os.environ.get("STATE_REPO", "ffwf/cicd-ref-arch")
 STATE_BRANCH = os.environ.get("STATE_BRANCH", "master")
 CLUSTER = os.environ.get("CLUSTER", "c-local")
-TOKEN = os.environ.get("FORGEJO_TOKEN", "")  # optional: read-only, for private repos
+
+
+def _read_token() -> str:
+    """FORGEJO_TOKEN if set; else the platform token (dashboard/platform.py), whose bot can read every
+    enrolled repo, private ones and ones under users with a limited profile included; else anonymous."""
+    if os.environ.get("FORGEJO_TOKEN"):
+        return os.environ["FORGEJO_TOKEN"]
+    try:
+        d = os.environ.get("PLATFORM_SECRET_DIR", "/var/run/secrets/dashboard-platform")
+        with open(os.path.join(d, "token")) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+TOKEN = _read_token()
 
 
 class Forgejo:
-    """A small, cached Forgejo API client. Anonymous unless FORGEJO_TOKEN is set."""
+    """A small, cached Forgejo API client, with the read token above (anonymous without one)."""
 
     def __init__(self, base: str = FORGE, token: str = TOKEN, ttl: float = 8.0):
         headers = {"Accept": "application/json"}
