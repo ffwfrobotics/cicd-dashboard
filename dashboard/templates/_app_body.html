@@ -1,54 +1,53 @@
-{% from "_macros.html" import meter, gate %}
-<h2>Environments</h2>
+{% from "_macros.html" import meter, gate, score, legend, csrf %}
+{% set dev = a.env('dev') %}
 <div class="cards">
 {% for e in a.envs %}
   <div class="card">
-    <h3>{{ e.dir }} {% if e.kind == 'prod' %}<span class="pill">prod</span>{% endif %}</h3>
+    <h3>{{ e.dir }}{% if e.kind == 'prod' %} <span class="pill plain">prod</span>{% endif %}</h3>
     {% for h in e.hosts %}<div><a href="https://{{ h }}/">{{ h }}</a></div>{% endfor %}
-    <div class="muted">runs <a href="/a/{{ a.name }}/c/{{ e.commit }}{% if e.branch %}?branch={{ e.branch }}{% endif %}"><code>{{ (e.commit or '')[:7] }}</code></a>{% if e.branch %} from <code>{{ e.branch }}</code>{% endif %} · {{ (e.rendered_at or '')[:16] | replace('T', ' ') }}</div>
-    <div style="margin-top:.3rem">{{ gate(e.security) }}{% if e.failing %} <span class="muted">{{ e.failing | map(attribute='rule') | join(', ') }}</span>{% endif %}</div>
+    <div class="muted small"><a href="/a/{{ a.name }}/c/{{ e.commit }}{% if e.branch %}?branch={{ e.branch }}{% endif %}"><code>{{ (e.commit or '')[:7] }}</code></a>{% if e.branch %} · <code>{{ e.branch }}</code>{% endif %} · {{ e.rendered_at | ts }}</div>
+    <div class="chips">{{ gate(e.security) }}{{ score(a, e) }}{% if e.failing %}<span class="pill s-warn" title="{{ e.failing | map(attribute='rule') | join(', ') }}">{{ e.failing | length }} finding{{ 's' if e.failing | length != 1 }}</span>{% endif %}</div>
   </div>
 {% endfor %}
 </div>
 
-{% set dev = a.env('dev') %}
-{% if user and can_write %}
-<h2>Request a promotion to prod</h2>
-<form method="post" action="/a/{{ a.name }}/act">
-  <input type="hidden" name="action" value="request-promotion"><input type="hidden" name="csrf" value="{{ user.csrf }}">
-  Promote what dev runs now{% if dev %} (<code>{{ (dev.commit or '')[:7] }}</code>){% endif %}.
-  <input name="reason" placeholder="why" size="30"> <input name="not_before" placeholder="not before (UTC, optional)" size="24">
-  <button class="primary">Request</button>
-  <div class="muted">You will be the requester; someone else has to approve it.</div>
+{% if user and can_write and dev %}
+<h2>Promote</h2>
+<form class="panel fields" method="post" action="/a/{{ a.name }}/act">
+  <input type="hidden" name="action" value="request-promotion">{{ csrf(user) }}
+  <label>From<span class="pill plain">dev <code>{{ (dev.commit or '')[:7] }}</code></span></label>
+  <label>Reason<input name="reason" size="32"></label>
+  <label title="Empty: as soon as approved">Not before (UTC)<input name="not_before" type="datetime-local"></label>
+  <button class="primary" title="Opens a promotion PR; a second person approves it">Request</button>
 </form>
 {% endif %}
 
-<h2>Branches <span class="muted" style="font-weight:400;font-size:.9rem">· tenant {{ usage.tenant }}: {{ usage.used }} of {{ usage.limit }} branch environments in use</span></h2>
+<h2>Branches <span class="aside" title="Branch environments in use by tenant {{ usage.tenant }}, of its limit">{{ usage.used }} / {{ usage.limit }} environments</span></h2>
 <table>
-<tr><th>Branch</th><th>Head</th><th>Road to prod</th><th>Environment</th>{% if user and can_write %}<th></th>{% endif %}</tr>
+<tr><th>Branch</th><th>Head</th><th>Pipeline</th><th>Environment</th>{% if user and can_write %}<th></th>{% endif %}</tr>
 {% for b in branches %}
 <tr>
-  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill">dev</span>{% endif %}{% if not b.active %} <span class="pill s-skip">excluded</span>{% endif %}{% if b.paused %} <span class="pill s-skip" title="paused by {{ b.paused.by }} at {{ b.paused.at }}">paused</span>{% endif %}{% if b.waiting %} <span class="pill s-warn">waiting for a slot</span>{% endif %}</td>
+  <td><code>{{ b.name }}</code>{% if b.name == a.dev_branch %} <span class="pill plain">dev</span>{% endif %}{% if not b.active %} <span class="pill plain" title="Matches an exclude pattern in cicd.yaml">excluded</span>{% endif %}{% if b.paused %} <span class="pill plain" title="By {{ b.paused.by }}, {{ b.paused.at }}">paused</span>{% endif %}{% if b.waiting %} <span class="pill s-warn" title="The tenant is at its branch environment limit">waiting</span>{% endif %}</td>
   <td><a href="/a/{{ a.name }}/c/{{ b.head.sha }}?branch={{ b.name }}"><code>{{ b.head.short }}</code></a> <span class="muted">{{ b.head.message[:60] }}</span></td>
   <td>{{ meter(b.head.stages) }}</td>
-  <td>{% if b.env %}{% for h in b.env.hosts[:1] %}<a href="https://{{ h }}/">{{ h }}</a>{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+  <td>{% if b.env %}{% for h in b.env.hosts[:1] %}<a href="https://{{ h }}/">{{ h }}</a>{% endfor %}{% endif %}</td>
   {% if user and can_write %}<td class="row-actions">{% if b.name != a.dev_branch and b.active %}
-    {% for act, label, cls in ([('resume', 'Resume', 'primary')] if b.paused else [('pause', 'Pause', '')] + ([('remove-env', 'Remove env', 'danger')] if b.env else [])) %}
-    <form class="inline" method="post" action="/a/{{ a.name }}/act"><input type="hidden" name="action" value="{{ act }}"><input type="hidden" name="branch" value="{{ b.name }}"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="{{ cls }}" title="{{ {'pause': 'stop CI/CD for this branch and free its slot', 'resume': 'let pushes to this branch go through CI/CD again', 'remove-env': 'remove its environment now; the next push brings it back'}[act] }}">{{ label }}</button></form>
+    {% for act, label, cls in ([('resume', 'Resume', '')] if b.paused else [('pause', 'Pause', '')] + ([('remove-env', 'Remove', 'danger')] if b.env else [])) %}
+    <form class="inline" method="post" action="/a/{{ a.name }}/act"><input type="hidden" name="action" value="{{ act }}"><input type="hidden" name="branch" value="{{ b.name }}">{{ csrf(user) }}<button class="{{ cls }}" title="{{ {'pause': 'Stop CI/CD for this branch and free its environment', 'resume': 'Run CI/CD on this branch again', 'remove-env': 'Remove the environment; the next push recreates it'}[act] }}">{{ label }}</button></form>
     {% endfor %}{% endif %}</td>{% endif %}
 </tr>
 {% endfor %}
 </table>
 
-<h2>Recent commits on <code>{{ a.dev_branch }}</code></h2>
+<h2>Commits <code>{{ a.dev_branch }}</code></h2>
 <table>
-<tr><th>Commit</th><th>Author</th><th>Road to prod</th></tr>
+<tr><th>Commit</th><th>Author</th><th>Pipeline</th></tr>
 {% for c in history %}
 <tr>
   <td><a href="/a/{{ a.name }}/c/{{ c.sha }}?branch={{ c.branch }}"><code>{{ c.short }}</code></a> {{ c.message[:72] }}</td>
-  <td class="muted">{{ c.author }} · {{ c.when[:16] | replace('T', ' ') }}</td>
+  <td class="muted">{{ c.author }} · {{ c.when | ts }}</td>
   <td>{{ meter(c.stages) }}</td>
 </tr>
 {% endfor %}
 </table>
-<p class="muted">Stages: {% for k, label in STAGES %}{{ label }}{% if not loop.last %} › {% endif %}{% endfor %}. ✓ done · ⚠ warning · ✗ failed or blocking · ◌ in progress · ○ not reached · ⊘ skipped. A wavy underline marks a stage something would block at prod.</p>
+{{ legend([('ok', 'Done'), ('warn', 'Warning'), ('fail', 'Failed'), ('run', 'Running'), ('todo', 'Pending'), ('skip', 'Skipped')]) }}

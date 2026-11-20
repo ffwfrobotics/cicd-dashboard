@@ -3,56 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}cicd-dashboard{% endblock %}</title>
+<title>{% block title %}{{ BRAND }}{% endblock %}</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/static/app.css?v={{ VERSION }}">
+<script src="/static/app.js?v={{ VERSION }}"></script>
 <script src="/static/htmx.min.js"></script>
 <script src="/static/sse.min.js"></script>
-<style>
-  :root { --ok:#1a7f37; --warn:#9a6700; --fail:#cf222e; --muted:#6e7781; --line:#d0d7de; --bg:#fff; --fg:#1f2328; --chip:#f6f8fa; }
-  @media (prefers-color-scheme: dark) { :root { --ok:#3fb950; --warn:#d29922; --fail:#f85149; --muted:#8b949e; --line:#30363d; --bg:#0d1117; --fg:#e6edf3; --chip:#161b22; } }
-  * { box-sizing: border-box; }
-  body { font: 15px/1.45 system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
-  header { padding: .7rem 1.2rem; border-bottom: 1px solid var(--line); display: flex; gap: 1rem; align-items: baseline; }
-  header .brand { font-weight: 700; } header .live { margin-left: auto; color: var(--muted); font-size: .85rem; }
-  main { padding: 1rem 1.2rem 3rem; max-width: 84rem; }
-  a { color: inherit; } .muted { color: var(--muted); } code { font-size: .9em; }
-  .crumbs { color: var(--muted); margin-bottom: .6rem; } .crumbs a { text-decoration: none; } .crumbs a:hover { text-decoration: underline; }
-  h1 { font-size: 1.35rem; margin: .2rem 0 .8rem; } h2 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
-  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-weight: 600; font-size: .85rem; color: var(--muted); }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .8rem; }
-  .card { border: 1px solid var(--line); border-radius: 8px; padding: .7rem .9rem; background: var(--chip); }
-  .card h3 { margin: 0 0 .3rem; font-size: 1rem; }
-  .pill { display: inline-block; padding: 0 .45rem; border-radius: 999px; font-size: .8rem; border: 1px solid var(--line); }
-  .s-ok { color: var(--ok); } .s-warn { color: var(--warn); } .s-fail { color: var(--fail); } .s-todo, .s-skip { color: var(--muted); }
-  .meter { display: inline-flex; gap: 2px; font-size: 1.05rem; letter-spacing: 0; white-space: nowrap; }
-  .meter .g { width: 1.15em; text-align: center; } .meter .g.preview { text-decoration: underline wavy var(--fail); }
-  .spin { display: inline-block; animation: spin 1.1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
-  .road { display: flex; flex-wrap: wrap; gap: 0; margin: .8rem 0 1.2rem; }
-  .step { flex: 1 1 7.2rem; min-width: 7.2rem; padding: .55rem .5rem; border-top: 4px solid var(--line); position: relative; }
-  .step.ok { border-top-color: var(--ok); } .step.warn { border-top-color: var(--warn); } .step.fail { border-top-color: var(--fail); }
-  .step.run { border-top-color: var(--warn); border-top-style: dashed; }
-  .step .gl { font-size: 1.4rem; line-height: 1; } .step .lb { font-weight: 600; font-size: .9rem; margin: .2rem 0; }
-  .step .dt { font-size: .8rem; color: var(--muted); word-break: break-word; }
-  .step .pv { font-size: .78rem; color: var(--fail); margin-top: .25rem; }
-  .prodside { background: color-mix(in srgb, var(--chip) 70%, transparent); }
-  .rule { border-left: 3px solid var(--warn); padding: .4rem .7rem; background: var(--chip); margin: .6rem 0; }
-  .who { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; }
-  .flash { border: 1px solid var(--line); border-left: 4px solid var(--ok); padding: .5rem .8rem; margin-bottom: 1rem; background: var(--chip); }
-  form.inline { display: inline; } button, .btn { font: inherit; font-size: .85rem; padding: .15rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--chip); color: var(--fg); cursor: pointer; text-decoration: none; }
-  button.primary { border-color: var(--ok); color: var(--ok); } button.danger { border-color: var(--fail); color: var(--fail); }
-  .row-actions { white-space: nowrap; } input { font: inherit; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
-  .tabs { display: flex; gap: .2rem; border-bottom: 1px solid var(--line); margin: -.2rem 0 1rem; flex-wrap: wrap; }
-  .tabs a { padding: .35rem .7rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
-  .tabs a.on { color: var(--fg); border-bottom-color: var(--fg); }
-  .grid td.c { text-align: center; white-space: nowrap; } .small { font-size: .82rem; }
-  details summary { cursor: pointer; } textarea { font: inherit; }
-</style>
 </head>
 <body hx-ext="sse" sse-connect="/events">
-<header><span class="brand"><a href="/" style="text-decoration:none">cicd-dashboard</a></span>
-<span class="muted">owner's view · cicd-ref-arch</span>
-<span class="live" title="pages refresh themselves when something changes">● live · {{ VERSION }} ({{ COMMIT[:7] }})</span>
-<span>{% if user %}{{ user.login }} · <a href="/auth/logout">sign out</a>{% elif auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a>{% else %}<span class="muted" title="no OAuth client in this environment">read-only</span>{% endif %}</span></header>
+<header class="top">
+  <a class="brand" href="/"><span class="logo"></span>{{ BRAND }}</a>
+  <nav>{% set path = request.url.path %}<a href="/"{% if path == '/' or path.startswith('/a/') %} class="on"{% endif %}>Applications</a><a href="/advisories"{% if path.startswith('/advisories') %} class="on"{% endif %}>Advisories</a></nav>
+  <div class="right">
+    <span id="conn" class="conn" title="Connecting"><i></i><span>Offline</span></span>
+    <button id="theme" class="iconbtn" title="Theme" aria-label="Switch theme"><svg class="i"><use href="/static/icons.svg#auto"/></svg></button>
+    {% if user %}<span>{{ user.login }}</span><a href="/auth/logout">Sign out</a>{% elif auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a>{% else %}<span class="pill plain" title="Sign-in isn't configured here">Read-only</span>{% endif %}
+  </div>
+</header>
 <main>{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}{% block body %}{% endblock %}</main>
+<footer><span>{{ BRAND }} {{ VERSION }}</span><span><code>{{ COMMIT[:7] }}</code></span></footer>
 </body>
 </html>

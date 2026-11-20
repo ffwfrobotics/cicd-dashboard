@@ -1,6 +1,6 @@
 # cicd-dashboard
 
-The information system owner's view of their applications on [cicd-ref-arch](https://forge.goblincorps.com/ffwf/cicd-ref-arch): what is deployed where, how each commit is doing on its road to prod, and (coming) what evidence covers which security controls.
+The information system owner's view of their applications on [cicd-ref-arch](https://forge.goblincorps.com/ffwf/cicd-ref-arch): what is deployed where, how each commit is doing on its way to prod, and what evidence covers which security controls.
 
 The plans this follows are in akb (project `kubecon2026shenanigans`, task `cicd-compliance-dashboard`):
 - #450, #453 and #456: purpose and data model;
@@ -14,22 +14,11 @@ It is the owner's side. The CSPD app, which runs assessments, is its counterpart
 | Page | Shows |
 |---|---|
 | `/` | Tenants and their applications, with what dev and prod run |
-| `/a/<app>` | Environments (URLs, commit, security gate), branches with their road to prod, recent commits on the dev branch |
-| `/a/<app>/c/<sha>` | One commit's road to prod: Committed › Tests › Build › Security › Deployed › Assessed › Review › Promotion PR › Approved › Scheduled › In prod. Findings that would block prod, and who requested and approved a promotion, with the two-person rule in plain words. |
+| `/a/<app>` | Environments (URLs, commit, security gate), branches with their pipeline, recent commits on the dev branch |
+| `/a/<app>/c/<sha>` | One commit's pipeline: Committed › Tests › Build › Security › Deployed › Assessed › Findings › Promotion › Approved › Scheduled › Prod. Findings that would block prod, and who requested and approved a promotion. |
 | `/api/...` | The same data as JSON, for agents (`/api/docs`) |
 
-**Glyphs:**
-
-| Glyph | Meaning |
-|---|---|
-| ✓ | done |
-| ⚠ | warning |
-| ✗ | failed or blocking |
-| ◌ | in progress |
-| ○ | not reached |
-| ⊘ | skipped |
-
-A finding that is only a warning in dev is shown ahead of time on the prod-side stages.
+Each stage has one of six states, with the same icon and colour everywhere: done, warning, failed, running, pending, skipped. A finding that is only a warning in dev shows as a badge on the first prod-side stage it would block.
 
 **Where the data comes from:** pages update themselves over server-sent events when the forge or the state repo changes. The dashboard reads the state repo's archive and Forgejo's API, anonymously for public repos, or with `FORGEJO_TOKEN` (read-only) for private ones. It stores nothing.
 
@@ -48,6 +37,18 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `STATE_BRANCH` | `master` |
 | `CLUSTER` | `c-local` |
 | `FORGEJO_TOKEN` | none |
+
+## Appearance and branding
+
+| What | How |
+|---|---|
+| Colours, fonts, corner radius, logo | One file: [`dashboard/static/theme.css`](dashboard/static/theme.css). Each colour is `light-dark(<light>, <dark>)`. To use your own without rebuilding the image, mount a file and set `DASHBOARD_THEME` to its path. |
+| Product name | `DASHBOARD_BRAND` (default `cicd-dashboard`) |
+| Logo | `--brand-logo` (any CSS image; a `data:` URL keeps it in the one file) and `--brand-logo-width` in the theme |
+| Light or dark | Follows the browser; the header button switches between auto, light and dark and remembers it |
+| Icons | `dashboard/static/icons.svg`, drawn in the theme's status colours |
+
+Layout is in `dashboard/static/app.css`, which only uses the theme's variables.
 
 ## Step 2: sign in and act as yourself
 
@@ -72,7 +73,7 @@ These read the owner's compliance repo, [`ffwf/cicd-compliance`](https://forge.g
 | Page | Step | Shows and does |
 |---|---|---|
 | `/a/<app>/controls` | 3 | Each environment's OSCAL self-assessment, per NIST SP 800-53A objective: satisfied or not, automated or manual, which layer said so, and the evidence on hover. Links to the OSCAL assessment results, SSP and SBOM (`/api/apps/<app>/envs/<env>/<doc>`). The commit page's **Assessed** stage summarises it. |
-| `/a/<app>/findings` | 4 | IT Security's findings as tests per environment. **Import** a Tenable CSV (`examples/it-security-scan-demo.csv`); each row gets a check (package, missing header, or manual). **Accept risk** (reason and expiry: a claim for the assessor) or **close**. The commit page's **Review** stage summarises them. |
+| `/a/<app>/findings` | 4 | IT Security's findings as tests per environment. **Import** a Tenable CSV (`examples/it-security-scan-demo.csv`); each row gets a check (package, missing header, or manual). **Accept risk** (reason and expiry: a claim for the assessor) or **close**. The commit page's **Findings** stage summarises them. |
 | `/advisories` | 5 | Announce a vulnerability (package and affected range), or pick one from OSV, which is asked about the live SBOMs' packages. It shows which live environments the advisory hits; only those are re-scanned. |
 | `/a/<app>/releases` | 6 | Prepare a package of chosen environments' records, unaltered with sha256s, as a pull request. **Release** by merging it, as a second person with merge rights (or a named approver: `apps/<app>/app.yaml` `release:`). |
 

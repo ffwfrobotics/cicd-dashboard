@@ -1,32 +1,32 @@
 {% extends "base.html" %}
-{% block title %}{{ a.name }} releases · cicd-dashboard{% endblock %}
+{% from "_macros.html" import gate, csrf %}
+{% block title %}Releases · {{ a.name }} · {{ BRAND }}{% endblock %}
 {% block body %}
-<div class="crumbs"><a href="/">{{ a.tenant }}</a> › <a href="/a/{{ a.name }}">{{ a.name }}</a> › releases</div>
-<h1>{{ a.name }}: releases to IT Security</h1>
 {% include "_nav.html" %}
-<p>Nothing goes to IT Security automatically. The owner chooses what to release; the dashboard packages those environments' records <strong>unaltered</strong>, with a sha256 for each, as a pull request in <code>{{ repo }}</code>. <strong>Merging it is the release</strong>, by someone other than who prepared it{% if rule.rule == 'approvers' %}, from: {{ rule.approvers | join(', ') }}{% else %}, with merge rights{% endif %}. Git history is the release log.</p>
 {% if not perms %}
-<p>{% if not user and auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to see releases{% else %}You can't see <code>{{ repo }}</code>{% endif %}.</p>
+<p class="muted">{% if not user and auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to see releases.{% else %}Releases (<code>{{ repo }}</code>) aren't visible to you.{% endif %}</p>
 {% else %}
+{% set rule_tip = 'Released by merging, by ' ~ ('one of: ' ~ rule.approvers | join(', ') if rule.rule == 'approvers' else 'someone other than the preparer') %}
 {% if prs %}
-<h2>Waiting to be released</h2>
-<table>{% for p in prs %}<tr><td><a href="{{ p.url }}">#{{ p.number }}</a> {{ p.title }}<div class="muted small">prepared by {{ p.author }}{% if p.approvers %} · approved by {{ p.approvers | join(', ') }}{% endif %}</div></td>
+<h2>Pending <span class="pill plain" title="{{ rule_tip }}">{{ 'Named approvers' if rule.rule == 'approvers' else 'Two-person' }}</span></h2>
+<table><tr><th>Package</th><th>Prepared by</th><th>Approved</th><th></th></tr>
+{% for p in prs %}<tr><td><code>{{ p.id }}</code> <a class="small" href="{{ p.url }}">#{{ p.number }}</a></td><td>{{ p.author }}</td><td>{{ p.approvers | join(', ') or '—' }}</td>
 <td class="row-actions">{% if p.may %}
-<form class="inline" method="post" action="/releases/{{ p.number }}/approve"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button>Approve as {{ user.login }}</button></form>
-<form class="inline" method="post" action="/releases/{{ p.number }}/merge"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary">Release (merge)</button></form>
-{% else %}<span class="s-warn small">{{ p.why }}</span>{% endif %}</td></tr>{% endfor %}</table>
+<form class="inline" method="post" action="/releases/{{ p.number }}/approve">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button>Approve</button></form>
+<form class="inline" method="post" action="/releases/{{ p.number }}/merge">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary" title="Merges the pull request">Release</button></form>
+{% else %}<span class="pill s-warn" title="{{ p.why }}">Pending</span>{% endif %}</td></tr>{% endfor %}</table>
 {% endif %}
 <h2>Released</h2>
-<table><tr><th>Package</th><th>Environments</th><th>Files</th><th>Prepared by</th></tr>
-{% for m in rels %}<tr><td><code>{{ m.id }}</code><div class="muted small">{{ m.released[:16] | replace('T', ' ') }}{% if m.note %} · {{ m.note }}{% endif %}</div></td><td>{{ m.environments | join(', ') }}</td><td class="small">{{ m.files | length }} · <a href="{{ FORGE }}/{{ repo }}/src/branch/main/releases/{{ m.id }}/manifest.json">manifest</a></td><td>{{ m.prepared_by }}</td></tr>
-{% else %}<tr><td colspan="4" class="muted">Nothing released yet.</td></tr>{% endfor %}</table>
+<table><tr><th>Package</th><th>Environments</th><th>Files</th><th>Prepared by</th><th>Note</th></tr>
+{% for m in rels %}<tr><td><a href="{{ FORGE }}/{{ repo }}/src/branch/main/releases/{{ m.id }}"><code>{{ m.id }}</code></a><div class="muted small">{{ m.released | ts }}</div></td><td>{{ m.environments | join(', ') }}</td><td><a href="{{ FORGE }}/{{ repo }}/src/branch/main/releases/{{ m.id }}/manifest.json" title="manifest.json: every file's sha256">{{ m.files | length }}</a></td><td>{{ m.prepared_by }}</td><td class="small">{{ m.note }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">None.</td></tr>{% endfor %}</table>
 {% if perms.push %}
-<h2>Prepare a release</h2>
-<form method="post" action="/a/{{ a.name }}/releases">
-  <input type="hidden" name="csrf" value="{{ user.csrf }}">
-  {% for e in a.envs %}<label style="margin-right:1rem"><input type="checkbox" name="envs" value="{{ e.dir }}"{% if e.kind == 'prod' %} checked{% endif %}> {{ e.dir }} <span class="muted small"><code>{{ (e.commit or '')[:7] }}</code>{% if e.assessment %} · {{ e.assessment.counts.satisfied }}/{{ e.assessment.objectives | length }}{% else %} · no assessment{% endif %}</span></label>{% endfor %}
-  <div style="margin-top:.4rem"><input name="note" placeholder="a note for IT Security (optional)" size="50"> <button class="primary">Prepare package</button></div>
-  <div class="muted small">Each environment's self-assessment and SSP (OSCAL), SBOM, security records, test records, manifests and suppression records, as they are in the state repo now.</div>
+<h2>Prepare</h2>
+<form class="panel fields" method="post" action="/a/{{ a.name }}/releases">
+  {{ csrf(user) }}
+  {% for e in a.envs %}<label class="check"><input type="checkbox" name="envs" value="{{ e.dir }}"{% if e.kind == 'prod' %} checked{% endif %}>{{ e.dir }} <code class="muted">{{ (e.commit or '')[:7] }}</code>{% if e.assessment %} <span class="muted small">{{ e.assessment.counts.satisfied }}/{{ e.assessment.objectives | length }}</span>{% endif %}</label>{% endfor %}
+  <label>Note<input name="note" size="40"></label>
+  <button class="primary" title="Opens a pull request with the environments' records and their sha256; {{ rule_tip | lower }}">Prepare</button>
 </form>
 {% endif %}
 {% endif %}

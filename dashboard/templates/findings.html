@@ -1,54 +1,55 @@
 {% extends "base.html" %}
-{% block title %}{{ a.name }} IT Security's findings · cicd-dashboard{% endblock %}
+{% from "_macros.html" import icon, sev, legend, csrf %}
+{% block title %}Findings · {{ a.name }} · {{ BRAND }}{% endblock %}
 {% block body %}
-<div class="crumbs"><a href="/">{{ a.tenant }}</a> › <a href="/a/{{ a.name }}">{{ a.name }}</a> › IT Security's findings</div>
-<h1>{{ a.name }}: IT Security's findings</h1>
 {% include "_nav.html" %}
-<p>Findings IT Security hands over become <strong>tests</strong> on every environment, without a developer pull request: failing while their check holds, passing once fixed. In dev and branches they warn; in prod they block. Developers can't suppress them; the owner's security role can accept the risk, with a reason and an expiry, as a claim for the assessor.</p>
-{% if not user %}
-<p>{% if auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to see the ledger{% else %}The ledger is private{% endif %} (<code>{{ repo }}</code>). Results per environment, as their last gate saw them:</p>
-{% elif not perms %}
-<p class="s-warn">You can't see <code>{{ repo }}</code>, so the ledger isn't shown. Results per environment, as their last gate saw them:</p>
-{% endif %}
-
+{% set write = perms and perms.push %}
 {% if ledger %}
 <table>
-<tr><th>Finding</th><th>Check</th><th>Status</th>{% for e in a.envs %}<th class="c">{{ e.dir }}</th>{% endfor %}{% if perms and perms.push %}<th></th>{% endif %}</tr>
+<tr><th>Finding</th><th>Check</th><th>Status</th>{% for e in a.envs %}<th class="c">{{ e.dir }}</th>{% endfor %}{% if write %}<th></th>{% endif %}</tr>
 {% for f in ledger %}{% set chk = f.check or {'type': 'manual'} %}
 <tr>
-  <td><code>{{ f.id }}</code> <span class="pill s-{{ {'critical':'fail','high':'fail','medium':'warn'}.get(f.severity, 'todo') }}">{{ f.severity }}</span><br>{{ f.title }}{% if f.cve %} <span class="muted small">{{ f.cve | join(', ') }}</span>{% endif %}<div class="muted small">{{ (f.source or {}).kind }} · {{ (f.source or {}).imported_by }} {{ ((f.source or {}).imported_at or '')[:10] }}{% if f.location %} · {{ f.location }}{% endif %}</div></td>
-  <td class="small"><code>{{ chk.type }}</code>{% if chk.type == 'package' %} {{ chk.name }} {{ chk.affected }}{% elif chk.type == 'endpoint' %} {{ chk.header or chk.status }} at {{ chk.path or '/' }}{% elif chk.type == 'rule' %} {{ chk.rule }}{% endif %}</td>
-  <td class="small">{{ f.status }}{% if f.accepted %}<div class="muted">by {{ f.accepted.by }} until {{ f.accepted.expires }}: {{ f.accepted.reason }}</div>{% endif %}{% if f.closed %}<div class="muted">by {{ f.closed.by }}: {{ f.closed.reason }}</div>{% endif %}</td>
+  <td><code>{{ f.id }}</code> {{ sev(f.severity) }}<div>{{ f.title }}{% if f.cve %} <span class="muted small">{{ f.cve | join(', ') }}</span>{% endif %}</div>
+    <div class="muted small">{{ (f.source or {}).kind }} · {{ (f.source or {}).imported_by }} · {{ (f.source or {}).imported_at | ts }}{% if f.location %} · {{ f.location }}{% endif %}</div></td>
+  <td class="small"><span class="pill plain">{{ chk.type }}</span> {% if chk.type == 'package' %}<code>{{ chk.name }} {{ chk.affected }}</code>{% elif chk.type == 'endpoint' %}<code>{{ chk.header or chk.status }}</code> <span class="muted">{{ chk.path or '/' }}</span>{% elif chk.type == 'rule' %}<code>{{ chk.rule }}</code>{% endif %}</td>
+  <td class="small">{% set who = f.accepted or f.closed %}<span class="pill {{ {'open': 's-fail', 'accepted': 's-warn'}.get(f.status, 'plain') }}"{% if who %} title="{{ who.by }}{% if who.expires %}, until {{ who.expires }}{% endif %}: {{ who.reason }}"{% endif %}>{{ f.status }}</span>{% if f.accepted %}<div class="muted">until {{ f.accepted.expires }}</div>{% endif %}</td>
   {% for e in a.envs %}{% set t = results[e.dir].get(f.id) %}
-  <td class="c small" title="{{ t.detail if t else 'not in this environment\'s last gate' }}">{% if not t %}<span class="muted">·</span>{% elif t.result == 'pass' %}<span class="s-ok">✓</span>{% elif t.result == 'accepted' %}<span class="s-skip">accepted</span>{% else %}<span class="s-fail">✗</span>{% endif %}</td>
+  <td class="c">{% if t %}{{ icon({'pass': 'ok', 'accepted': 'skip'}.get(t.result, 'fail'), t.detail) }}{% endif %}</td>
   {% endfor %}
-  {% if perms and perms.push %}<td class="row-actions small">
-    {% if f.status != 'closed' %}<details><summary>act</summary>
-      <form method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/accept"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input name="reason" placeholder="why the risk is acceptable" size="22"> until <input name="expires" type="date" min="{{ today }}"> <button>Accept risk</button></form>
-      <form method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/close"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input name="reason" placeholder="why it no longer applies" size="22"> <button>Close</button></form>
+  {% if write %}<td class="row-actions">
+    {% if f.status != 'closed' %}
+    <details class="pop"><summary>Accept</summary>
+      <form class="fields" method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/accept">{{ csrf(user) }}
+        <label>Reason<input name="reason" size="24" required></label><label>Until<input name="expires" type="date" min="{{ today }}" required></label><button>Accept risk</button></form>
+    </details>
+    <details class="pop"><summary>Close</summary>
+      <form class="fields" method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/close">{{ csrf(user) }}
+        <label>Reason<input name="reason" size="24" required></label><button>Close</button></form>
     </details>{% endif %}
-    {% if f.status != 'open' %}<form class="inline" method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/reopen"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button>Reopen</button></form>{% endif %}
+    {% if f.status != 'open' %}<form class="inline" method="post" action="/a/{{ a.name }}/findings/{{ f.id }}/reopen">{{ csrf(user) }}<button>Reopen</button></form>{% endif %}
   </td>{% endif %}
 </tr>
 {% endfor %}
 </table>
-{% elif perms %}
-<p class="muted">No findings for {{ a.name }} yet.</p>
-{% endif %}
-
-{% if not ledger %}
+{{ legend([('ok', 'Fixed'), ('fail', 'Open'), ('skip', 'Risk accepted')]) }}
+{% else %}
+{% if not perms %}<p class="muted">{% if not user and auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to see the ledger.{% else %}The ledger (<code>{{ repo }}</code>) isn't visible to you.{% endif %}</p>{% endif %}
+{% set any = a.envs | selectattr('external') | list %}
+{% if any %}
 <table>
-<tr><th>Environment</th><th>Tests from IT Security's findings and advisories</th></tr>
-{% for e in a.envs %}<tr><td>{{ e.dir }}</td><td class="small">{% for t in e.external %}<div><span class="s-{{ {'pass':'ok','fail':'fail'}.get(t.result, 'skip') }}">{{ {'pass':'✓','fail':'✗'}.get(t.result, '–') }}</span> <code>{{ t.test }}</code> {{ t.detail }}</div>{% else %}<span class="muted">none</span>{% endfor %}</td></tr>{% endfor %}
+<tr><th>Environment</th><th>Test</th><th>Result</th></tr>
+{% for e in a.envs %}{% for t in e.external %}<tr><td>{{ e.dir }}</td><td><code>{{ t.test }}</code></td><td class="small">{{ icon({'pass': 'ok', 'accepted': 'skip'}.get(t.result, 'fail')) }} {{ t.detail }}</td></tr>{% endfor %}{% endfor %}
 </table>
+{% else %}<div class="empty">No findings.</div>{% endif %}
 {% endif %}
 
-{% if perms and perms.push %}
-<h2>Import IT Security's scan</h2>
-<form method="post" action="/a/{{ a.name }}/findings/import" enctype="multipart/form-data">
-  <input type="hidden" name="csrf" value="{{ user.csrf }}">
-  <input type="file" name="file" accept=".csv,text/csv" required> <button class="primary">Import</button>
-  <div class="muted small">A Tenable CSV export (Plugin ID, CVE, Risk, Host, Port, Name, Synopsis, Solution, Plugin Output). Each row gets a check: a package with a fixed version, a missing HTTP header, or manual. You can refine checks in <code>{{ repo }}/ledger/{{ a.name }}.yaml</code>. Saved as you; re-assessment follows in a few minutes.</div>
+{% if write %}
+<h2>Import</h2>
+<form class="panel fields" method="post" action="/a/{{ a.name }}/findings/import" enctype="multipart/form-data">
+  {{ csrf(user) }}
+  <label title="Columns: Plugin ID, CVE, Risk, Host, Port, Name, Synopsis, Solution, Plugin Output">Tenable CSV<input type="file" name="file" accept=".csv,text/csv" required></label>
+  <button class="primary">Import</button>
+  <a class="small" href="{{ FORGE }}/{{ repo }}/src/branch/main/ledger/{{ a.name }}.yaml" title="Edit checks by hand">ledger/{{ a.name }}.yaml</a>
 </form>
 {% endif %}
 {% endblock %}

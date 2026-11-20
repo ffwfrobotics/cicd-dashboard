@@ -1,8 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{{ a.name }} · cicd-dashboard{% endblock %}
+{% block title %}{{ a.name }} · {{ BRAND }}{% endblock %}
 {% block body %}
-<div class="crumbs"><a href="/">{{ a.tenant }}</a> › {{ a.name }}</div>
-<h1>{{ a.name }} <span class="muted" style="font-weight:400">{% for r in a.repos %}<a href="{{ FORGE }}/{{ r }}"><code>{{ r }}</code></a>{% endfor %}</span></h1>
 {% include "_nav.html" %}
 <div hx-get="/a/{{ a.name }}/fragment/body" hx-trigger="sse:changed" hx-swap="innerHTML">
 {% include "_app_body.html" %}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4"/><path d="M5.1 8.3l2 2 3.8-4.3"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="warn" viewBox="0 0 16 16"><path d="M8 2.1l6.2 11.1H1.8z"/><path d="M8 6.5v3.1M8 11.6v.1"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="fail" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4"/><path d="M5.7 5.7l4.6 4.6M10.3 5.7l-4.6 4.6"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4"/><path d="M3.6 12.4l8.8-8.8"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="todo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4" stroke-dasharray="2.2 2.6"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="run" viewBox="0 0 16 16"><path d="M14.4 8A6.4 6.4 0 1 1 8 1.6"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="na" viewBox="0 0 16 16"><path d="M4.5 8h7"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="moon" viewBox="0 0 16 16"><path d="M13.6 9.6A6 6 0 0 1 6.4 2.4a6 6 0 1 0 7.2 7.2z"/></symbol>
+<symbol fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" id="auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4"/><path d="M8 1.6v12.8M8 4.2h4.9M8 8h6.2M8 11.8h4.9"/></symbol>
+</svg>

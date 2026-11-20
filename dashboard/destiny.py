@@ -2,8 +2,9 @@
 
 Pure functions over facts already fetched, so the rules are easy to read and to test.
 
-Glyphs (state):  ok ✓ green · warn ⚠ yellow · fail ✗ red · run ◌ spinner · todo ○ grey · skip ⊘ grey
-Dev shows findings as warnings; the prod-side stages show what would block there, ahead of time.
+States: ok, warn, fail, run, todo, skip (the templates give each an icon and a colour).
+A stage's `detail` is a few words; `tip` is the longer hover text. Dev shows findings as warnings;
+the first prod-side stage not yet passed carries what would block there (`blockers`), ahead of time.
 """
 from __future__ import annotations
 
@@ -17,14 +18,13 @@ STAGES = [
     ("security", "Security"),
     ("deployed", "Deployed"),
     ("assessed", "Assessed"),
-    ("review", "Review"),
-    ("promotion", "Promotion PR"),
+    ("review", "Findings"),
+    ("promotion", "Promotion"),
     ("approved", "Approved"),
     ("scheduled", "Scheduled"),
-    ("prod", "In prod"),
+    ("prod", "Prod"),
 ]
-PROD_SIDE = {"promotion", "approved", "scheduled", "prod"}
-GLYPH = {"ok": "✓", "warn": "⚠", "fail": "✗", "run": "◌", "todo": "○", "skip": "⊘"}
+PROD_SIDE = ("promotion", "approved", "scheduled", "prod")
 RUNNING = {"running", "waiting", "queued", "blocked"}
 
 
@@ -35,11 +35,8 @@ class Stage:
     state: str = "todo"
     detail: str = ""
     href: str | None = None
-    preview: str = ""          # prod-side only: "would block at prod: ..."
-
-    @property
-    def glyph(self) -> str:
-        return GLYPH[self.state]
+    tip: str = ""              # hover text: the longer explanation
+    blockers: list[dict] = field(default_factory=list)   # what would block prod: [{category, rules}]
 
 
 @dataclass
@@ -58,7 +55,8 @@ class Facts:
     in_prod: bool = False
     prod_superseded: bool = False
     branch_excluded: bool = False
-    not_in_cicd: str = ""             # why this branch's pushes skip CI/CD (paused, tenant limit)
+    not_in_cicd: str = ""             # this branch's pushes skip CI/CD: "paused" or "waiting" (tenant limit)
+    not_in_cicd_why: str = ""
     assessment: dict | None = None    # the commit's OSCAL self-assessment (summary)
     external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
@@ -78,12 +76,12 @@ def destiny(f: Facts) -> list[Stage]:
     now = f.now or dt.datetime.now(dt.timezone.utc)
 
     st["committed"].state = "ok"
-    st["committed"].detail = f"{f.author} · {f.when[:16].replace('T', ' ')}"
+    st["committed"].detail = f.author
 
     if f.not_in_cicd and not f.deploy:
         for k in ("tests", "build", "security", "deployed"):
             st[k].state = "skip"
-        st["tests"].detail = f"not in CI/CD: {f.not_in_cicd}"
+        st["tests"].detail, st["tests"].tip = f.not_in_cicd, f.not_in_cicd_why
         return [st[k] for k, _ in STAGES]
 
     # tests
@@ -105,10 +103,11 @@ def destiny(f: Facts) -> list[Stage]:
         if sec:
             st["security"].state = {"pass": "ok", "warn": "warn", "fail": "fail"}.get(sec.get("status"), "todo")
             n = len(f.failing)
-            st["security"].detail = "no findings over the threshold" if not n else f"{n} finding{'s' if n > 1 else ''} (report-only here)"
+            st["security"].detail = f"{n} finding{'s' if n > 1 else ''}" if n else ""
+            st["security"].tip = "Reported here; blocks a promotion to prod" if n else "No findings over the threshold"
         else:
             st["security"].state = "skip"
-            st["security"].detail = "no record (built before the security node)"
+            st["security"].detail = "no record"
         dep = st["deployed"]
         if f.deploy.get("live"):
             dep.state = "ok"
@@ -117,26 +116,26 @@ def destiny(f: Facts) -> list[Stage]:
             dep.href = f"https://{hosts[0]}/" if hosts else None
         else:
             dep.state = "ok"
-            dep.detail = f"was live in {f.deploy['env_dir']}; superseded" + (
-                f" by {f.deploy['superseded_by'][:7]}" if f.deploy.get("superseded_by") else "")
+            dep.detail = "superseded" + (f" by {f.deploy['superseded_by'][:7]}" if f.deploy.get("superseded_by") else "")
+            dep.tip = f"Was live in {f.deploy['env_dir']}"
     elif ds == "run" or (s == "ok" and d is None and f.jobs):
         for k in ("build", "security", "deployed"):
             st[k].state = "run" if k == "build" else "todo"
-        st["build"].detail = "deliver running"
+        st["build"].detail = "running"
         st["build"].href = (d or {}).get("url")
     elif ds == "fail":
         st["build"].state = "fail"
-        st["build"].detail = "deliver failed (build, scan or deploy): open the run"
+        st["build"].detail = "failed"
+        st["build"].tip = "The deliver job failed (build, scan or deploy)"
         st["build"].href = d.get("url")
     elif ds == "ok":
-        why = "excluded branch" if f.branch_excluded else "not deployed (excluded, or over the tenant limit)"
+        why = "excluded" if f.branch_excluded else "not deployed"
         for k in ("build", "security", "deployed"):
             st[k].state = "skip"
             st[k].detail = why if k == "build" else ""
     elif s == "fail":
         for k in ("build", "security", "deployed"):
             st[k].state = "skip"
-        st["build"].detail = "tests failed"
 
     # the commit's OSCAL self-assessment, and IT Security's findings as tests
     a = f.assessment
@@ -145,23 +144,24 @@ def destiny(f: Facts) -> list[Stage]:
         n, total = a["counts"]["satisfied"], len(a["objectives"])
         unc = a["coverage"].get("uncovered", 0)
         st["assessed"].state = "warn" if gaps["blocking"] else "ok"
-        st["assessed"].detail = f"{n}/{total} objectives satisfied" + (f", {unc} uncovered" if unc else "") + (
-            f"; open: {', '.join(gaps['blocking'][:3])}" if gaps["blocking"] else "")
+        st["assessed"].detail = f"{n}/{total}"
+        st["assessed"].tip = f"{n} of {total} objectives satisfied" + (f", {unc} uncovered" if unc else "") + (
+            f". Blocking: {', '.join(gaps['blocking'])}" if gaps["blocking"] else "")
         st["assessed"].href = "controls"
     elif f.deploy:
         st["assessed"].state = "skip"
-        st["assessed"].detail = "built before self-assessment existed"
+        st["assessed"].detail = "none"
     ext = f.external or []
     if ext:
         bad = [t for t in ext if t["result"] == "fail"]
         acc = [t for t in ext if t["result"] == "accepted"]
         st["review"].state = "warn" if bad else "ok"
-        st["review"].detail = (f"{len(bad)} of IT Security's findings open: " + ", ".join(t["test"].split("/", 1)[1] for t in bad[:3])
-                               if bad else f"IT Security: {len(ext)} findings, none open") + (f"; {len(acc)} risk accepted" if acc else "")
+        st["review"].detail = f"{len(bad)} open" if bad else f"{len(acc)} accepted" if acc else f"{len(ext)} fixed"
+        st["review"].tip = "; ".join(f"{t['test'].split('/', 1)[1]}: {t['result']}" for t in ext)
         st["review"].href = "findings"
     elif a:
         st["review"].state = "ok"
-        st["review"].detail = "nothing from IT Security"
+        st["review"].detail = "none"
 
     # promotion side
     p = f.promotion
@@ -172,50 +172,57 @@ def destiny(f: Facts) -> list[Stage]:
     if p:
         pr = p.get("pr") or {}
         st["promotion"].state = "ok" if (pr.get("merged") or p["state"] == "done") else ("run" if pr.get("state") == "open" else "fail" if pr.get("state") == "closed" else "run")
-        st["promotion"].detail = f"#{pr['number']} by {p['requested_by']}" if pr else f"requested by {p['requested_by']}"
+        st["promotion"].detail = (f"#{pr['number']} · " if pr else "") + p["requested_by"]
+        st["promotion"].tip = f"Requested by {p['requested_by']}"
         if pr.get("state") == "closed" and not pr.get("merged"):
-            st["promotion"].detail += ": closed without merging"
+            st["promotion"].detail = f"#{pr['number']} closed"
         st["promotion"].href = pr.get("url")
         approvers = [a for a in pr.get("approvers", []) if a not in (p["requested_by"], pr.get("author"))]
         merger = pr.get("merged_by")
         if p.get("approval"):
             st["approved"].state = "ok"
-            st["approved"].detail = p["approval"]
+            st["approved"].detail = p["approval"].rsplit(" by ", 1)[-1]      # the platform's record: "PR #8 merged by john"
+            st["approved"].tip = p["approval"]
         elif approvers or (merger and merger not in (p["requested_by"], pr.get("author"))):
             st["approved"].state = "ok"
-            st["approved"].detail = "approved by " + ", ".join(approvers or [merger])
+            st["approved"].detail = ", ".join(approvers or [merger])
         elif pr.get("merged"):
             st["approved"].state = "fail"
-            st["approved"].detail = f"merged by {merger}, who requested it: the platform won't apply this"
+            st["approved"].detail = "self-merged"
+            st["approved"].tip = f"Merged by {merger}, who requested it: it won't be applied"
         elif pr.get("state") == "open":
             st["approved"].state = "run"
-            st["approved"].detail = f"waiting for someone other than {p['requested_by']}"
+            st["approved"].detail = "pending"
+            st["approved"].tip = f"Awaiting an approver other than {p['requested_by']}"
         nb = p.get("not_before") or ""
         if p["state"] == "done":
             st["scheduled"].state = "ok"
-            st["scheduled"].detail = f"applied {str(p.get('applied_at', ''))[:16].replace('T', ' ')}"
+            st["scheduled"].detail = "applied"
+            st["scheduled"].tip = f"Applied {str(p.get('applied_at', ''))[:16].replace('T', ' ')} UTC"
         elif pr.get("merged"):
             due = dt.datetime.fromisoformat(nb.replace("Z", "+00:00")) if nb else now
             st["scheduled"].state = "run"
-            st["scheduled"].detail = "due now: applying within 5 minutes" if due <= now else f"not before {nb[:16].replace('T', ' ')}"
+            st["scheduled"].detail = "due" if due <= now else nb[5:16].replace("T", " ")
+            st["scheduled"].tip = "Applied within 5 minutes" if due <= now else f"Not before {nb[:16].replace('T', ' ')} UTC"
         if p["state"] == "done" and not f.in_prod:
             st["prod"].state = "ok"
-            st["prod"].detail = "was in prod; superseded"
+            st["prod"].detail = "superseded"
     elif not f.in_prod:
         superseded = bool(f.deploy and not f.deploy.get("live"))
         st["promotion"].state = "skip" if (not on_dev or superseded) else "todo"
-        st["promotion"].detail = (f"merge to {f.dev_branch} to promote" if not on_dev
-                                  else "superseded: only what dev runs now can be promoted" if superseded
-                                  else "ready to request" if f.deploy else "")
+        st["promotion"].tip = (f"Merge to {f.dev_branch} to promote" if not on_dev
+                               else "Only what dev runs now can be promoted" if superseded else "")
     if f.in_prod:
-        st["prod"].detail = "running in prod now"
+        st["prod"].detail = "live"
 
     # blockers to prod, shown ahead of time on the prod side
     if f.failing and not f.in_prod and st["promotion"].state != "skip":
-        rules = ", ".join(sorted({x["rule"] for x in f.failing}))[:120]
-        for k in PROD_SIDE:
-            if st[k].state not in ("ok",):
-                st[k].preview = f"would block at prod: {rules}"
+        by: dict[str, set] = {}
+        for x in f.failing:
+            by.setdefault(x.get("category") or "finding", set()).add(x["rule"])
+        first = next((st[k] for k in PROD_SIDE if st[k].state != "ok"), None)
+        if first:
+            first.blockers = [{"category": c, "rules": sorted(r)} for c, r in sorted(by.items())]
     if f.security and f.security.get("status") == "fail" and not f.deploy:
         st["deployed"].state = "fail"
 
@@ -243,6 +250,6 @@ def overall(stages: list[Stage]) -> str:
         return "run"
     if any(s.state == "fail" for s in stages):
         return "fail"
-    if any(s.state == "warn" or s.preview for s in stages):
+    if any(s.state == "warn" or s.blockers for s in stages):
         return "warn"
     return "ok"

@@ -1,0 +1,30 @@
+/* The theme: the one file to change to match your organisation.
+   Each colour is light-dark(<light>, <dark>). Everything else (app.css) only uses these names.
+   To replace it without rebuilding the image, set DASHBOARD_THEME to a file's path. */
+:root {
+  color-scheme: light dark;
+
+  /* brand: the name is DASHBOARD_BRAND; the logo is any CSS image (a data: URL keeps this one file) */
+  --brand-logo: none;
+  --brand-logo-width: 0px;
+  --brand-logo-height: 1.4rem;
+
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 8px;
+
+  --bg:      light-dark(#ffffff, #0d1117);   /* page */
+  --surface: light-dark(#f6f8fa, #161b22);   /* cards, header, inputs */
+  --fg:      light-dark(#1f2328, #e6edf3);
+  --muted:   light-dark(#59636e, #9198a1);
+  --line:    light-dark(#d1d9e0, #30363d);
+  --accent:  light-dark(#0969da, #4493f8);   /* links, primary buttons, the current tab */
+  --on-accent: light-dark(#ffffff, #0d1117);
+
+  /* status: used by every icon, pill and bar */
+  --ok:   light-dark(#1a7f37, #3fb950);
+  --warn: light-dark(#9a6700, #d29922);
+  --fail: light-dark(#cf222e, #f85149);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }

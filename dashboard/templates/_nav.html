@@ -1,1 +1,3 @@
-<nav class="tabs">{% for href, label in [('', 'Road to prod'), ('/controls', 'Controls'), ('/findings', "IT Security's findings"), ('/releases', 'Releases')] %}<a href="/a/{{ a.name }}{{ href }}"{% if request.url.path == '/a/' ~ a.name ~ href %} class="on"{% endif %}>{{ label }}</a>{% endfor %}<a href="/advisories">Advisories</a></nav>
+<div class="crumbs"><a href="/">{{ a.tenant }}</a></div>
+<h1>{{ a.name }} <span class="sub">{% for r in a.repos %}<a href="{{ FORGE }}/{{ r }}"><code>{{ r }}</code></a> {% endfor %}</span></h1>
+<nav class="tabs">{% for href, label in [('', 'Overview'), ('/controls', 'Controls'), ('/findings', 'Findings'), ('/releases', 'Releases')] %}<a href="/a/{{ a.name }}{{ href }}"{% if request.url.path == '/a/' ~ a.name ~ href %} class="on"{% endif %}>{{ label }}</a>{% endfor %}</nav>

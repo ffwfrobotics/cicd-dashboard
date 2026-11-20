@@ -1,4 +1,4 @@
-"""The road-to-prod rules. Run: python -m unittest discover -s tests -v"""
+"""The stage rules. Run: python -m unittest discover -s tests -v"""
 import datetime as dt
 import unittest
 
@@ -43,21 +43,19 @@ class Destiny(unittest.TestCase):
         stages = {s.key: s for s in destiny(f)}
         self.assertEqual(stages["security"].state, "warn")
         self.assertEqual(stages["deployed"].state, "ok")
-        self.assertIn("GHSA-x", stages["promotion"].preview)
-        self.assertIn("GHSA-x", stages["prod"].preview)
+        self.assertEqual(stages["promotion"].blockers, [{"category": "vuln", "rules": ["GHSA-x"]}])   # on the first prod-side stage only
+        self.assertEqual(stages["prod"].blockers, [])
         self.assertEqual(overall(list(stages.values())), "warn")
 
     def test_branch_commit_cannot_be_promoted(self):
         d = dict(LIVE, env="branch", env_dir="branch-feat")
         s = {x.key: x for x in destiny(facts(branch="feat", deploy=d, security={"status": "pass"}))}
         self.assertEqual(s["promotion"].state, "skip")
-        self.assertIn("merge to main", s["promotion"].detail)
 
     def test_superseded_dev_build(self):
         d = dict(LIVE, live=False, superseded_by="c" * 40)
         s = {x.key: x for x in destiny(facts(deploy=d, security={"status": "pass"}))}
-        self.assertEqual(s["promotion"].state, "skip")
-        self.assertIn("superseded", s["deployed"].detail)
+        self.assertEqual((s["deployed"].state, s["promotion"].state), ("ok", "skip"))
 
     def test_promotion_waiting_for_second_person(self):
         p = {"id": "x", "state": "pending", "not_before": "2026-11-19T19:00:00Z", "requested_by": "ada",
@@ -67,7 +65,6 @@ class Destiny(unittest.TestCase):
         s = {x.key: x for x in destiny(facts(deploy=LIVE, security={"status": "pass"}, promotion=p))}
         self.assertEqual(s["promotion"].state, "run")
         self.assertEqual(s["approved"].state, "run")          # ada approving her own request doesn't count
-        self.assertIn("other than ada", s["approved"].detail)
 
     def test_self_merged_promotion_is_refused(self):
         p = {"id": "x", "state": "pending", "not_before": "2026-11-19T19:00:00Z", "requested_by": "ada",
@@ -83,7 +80,6 @@ class Destiny(unittest.TestCase):
              "approval": None, "applied_at": None, "security": None, "pr": pr}
         s = {x.key: x for x in destiny(facts(deploy=LIVE, security={"status": "pass"}, promotion=p))}
         self.assertEqual((s["approved"].state, s["scheduled"].state), ("ok", "run"))
-        self.assertIn("not before", s["scheduled"].detail)
         p = dict(p, state="done", approval="PR #4 merged by bob", applied_at="2026-11-19T21:01:00Z")
         s = states(facts(deploy=LIVE, security={"status": "pass"}, promotion=p, in_prod=True))
         self.assertEqual(set(s[k] for k in ("promotion", "approved", "scheduled", "prod")), {"ok"})

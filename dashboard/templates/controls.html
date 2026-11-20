@@ -1,39 +1,43 @@
 {% extends "base.html" %}
-{% block title %}{{ a.name }} controls · cicd-dashboard{% endblock %}
+{% from "_macros.html" import icon, legend %}
+{% block title %}Controls · {{ a.name }} · {{ BRAND }}{% endblock %}
 {% block body %}
-<div class="crumbs"><a href="/">{{ a.tenant }}</a> › <a href="/a/{{ a.name }}">{{ a.name }}</a> › controls</div>
-<h1>{{ a.name }}: security controls</h1>
 {% include "_nav.html" %}
 {% if not t.envs %}
-<p class="muted">No environment of {{ a.name }} has a self-assessment yet: it is made by each build since cicd-ref-arch's self-assessment step (docs/oscal.md). Push a commit, or wait for the next one.</p>
+<div class="empty">No assessment yet. The next build makes one.</div>
 {% else %}
-<p>The owner's <strong>self-assessment</strong>, made from each environment's own pipeline records, per NIST SP 800-53A objective. Not an official assessment: those come from the assessor. Nothing here goes to IT Security until the owner <a href="/a/{{ a.name }}/releases">releases</a> it.</p>
-<div class="cards" style="margin-bottom:1rem">
-{% for e in t.envs %}{% set s = e.assessment %}
-  <div class="card"><h3>{{ e.dir }}</h3>
-    <div><strong>{{ s.counts.satisfied }}/{{ s.objectives | length }}</strong> objectives satisfied</div>
+<div class="cards">
+{% for e in t.envs %}{% set s = e.assessment %}{% set n = s.objectives | length %}
+  {% set na = s.coverage.get('not-applicable', 0) %}{% set unc = s.coverage.get('uncovered', 0) %}
+  {% set bad = n - s.counts.satisfied - unc %}
+  <div class="card">
+    <h3>{{ e.dir }} <span class="pill plain" title="Made by the owner from pipeline records; not an official assessment">Self-assessment</span></h3>
+    <div class="score">{{ s.counts.satisfied }}<small> / {{ n }} objectives</small></div>
+    <div class="bar" title="{{ s.counts.satisfied }} satisfied · {{ bad }} not satisfied · {{ unc }} uncovered">
+      <span class="s-ok" style="flex:{{ s.counts.satisfied }}"></span>{% if bad > 0 %}<span class="s-fail" style="flex:{{ bad }}"></span>{% endif %}{% if unc %}<span class="s-todo" style="flex:{{ unc }}"></span>{% endif %}
+    </div>
     <div class="muted small">{% for k, v in s.coverage | dictsort %}{{ v }} {{ k }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
-    <div class="muted small">commit <a href="/a/{{ a.name }}/c/{{ s.commit }}"><code>{{ s.commit[:7] }}</code></a> · assessed {{ s.generated[:16] | replace('T', ' ') }}</div>
-    <div class="small">OSCAL: <a href="/api/apps/{{ a.name }}/envs/{{ e.dir }}/assessment-results">assessment results</a> · <a href="/api/apps/{{ a.name }}/envs/{{ e.dir }}/ssp">SSP</a> · <a href="/api/apps/{{ a.name }}/envs/{{ e.dir }}/sbom">SBOM</a></div>
+    <div class="muted small"><a href="/a/{{ a.name }}/c/{{ s.commit }}"><code>{{ s.commit[:7] }}</code></a> · {{ s.generated | ts }}</div>
+    <div class="small" title="OSCAL 1.2.3 JSON">{% for doc, label in [('assessment-results', 'Assessment'), ('ssp', 'SSP'), ('sbom', 'SBOM')] %}<a href="/api/apps/{{ a.name }}/envs/{{ e.dir }}/{{ doc }}">{{ label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>
   </div>
 {% endfor %}
 </div>
-<table class="grid">
-<tr><th>Objective</th><th>Said by</th><th>Coverage</th>{% for e in t.envs %}<th class="c">{{ e.dir }}</th>{% endfor %}</tr>
+<h2>Objectives</h2>
+<table>
+<tr><th>Objective</th><th title="Which layer's statement applies: platform, app or sysadmin">Source</th><th>Coverage</th>{% for e in t.envs %}<th class="c">{{ e.dir }}</th>{% endfor %}</tr>
 {% for control, rows in t.controls.items() %}
-<tr><td colspan="{{ 3 + t.envs | length }}" style="background:var(--chip)"><strong>{{ control | upper }}</strong></td></tr>
+<tr class="group"><td colspan="{{ 3 + t.envs | length }}">{{ control | upper }}</td></tr>
 {% for r in rows %}
 <tr>
   <td><code>{{ r.id }}</code> <span class="muted small">{{ r.objective[:150] }}</span></td>
-  <td class="small">{{ r.layer or '—' }}</td>
+  <td class="small">{{ r.layer or '' }}</td>
   <td class="small">{{ r.coverage }}</td>
   {% for e in t.envs %}{% set o = r.cells.get(e.dir) %}
-  <td class="c" title="{% if o %}{% for x in o.evidence %}{{ '✓' if x.holds else '✗' }} {{ x.found }}&#10;{% endfor %}{{ o.reason }}{% endif %}">
-    {% if not o %}<span class="muted">·</span>{% elif o.coverage == 'not-applicable' %}<span class="s-skip">n/a</span>{% elif o.coverage == 'uncovered' %}<span class="s-warn">○</span>{% elif o.state == 'satisfied' %}<span class="s-ok">✓</span>{% else %}<span class="s-fail">✗</span>{% endif %}
-  </td>{% endfor %}
+  <td class="c">{% if o %}{% set tip %}{% for x in o.evidence %}{{ 'Holds' if x.holds else 'Fails' }}: {{ x.found }}
+{% endfor %}{{ o.reason }}{% endset %}{{ icon('na' if o.coverage == 'not-applicable' else 'todo' if o.coverage == 'uncovered' else 'ok' if o.state == 'satisfied' else 'fail', tip | trim) }}{% endif %}</td>{% endfor %}
 </tr>
 {% endfor %}{% endfor %}
 </table>
-<p class="muted small">✓ satisfied · ✗ not satisfied (hover for the evidence) · ○ uncovered: no layer says anything · n/a not applicable. Coverage: <em>automated</em> from pipeline records, <em>manual</em> includes an attestation. Layers: platform (cicd-ref-arch), app (its repo, optional), sysadmin (the compliance repo).</p>
+{{ legend([('ok', 'Satisfied'), ('fail', 'Not satisfied'), ('todo', 'Uncovered'), ('na', 'Not applicable')]) }}
 {% endif %}
 {% endblock %}

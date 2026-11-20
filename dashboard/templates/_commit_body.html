@@ -1,53 +1,51 @@
-{% from "_macros.html" import glyph, gate %}
-<h1><code>{{ c.short }}</code> {{ c.message }}</h1>
-<div class="muted">{{ c.author }} · {{ c.when[:16] | replace('T', ' ') }} · <a href="{{ FORGE }}/{{ c.repo }}/commit/{{ c.sha }}">view on the forge</a></div>
+{% from "_macros.html" import icon, blockers, sev, csrf %}
+<h1><a href="{{ FORGE }}/{{ c.repo }}/commit/{{ c.sha }}"><code>{{ c.short }}</code></a> {{ c.message }}</h1>
+<div class="muted">{{ c.author }} · {{ c.when | ts }}</div>
 
 <div class="road">
+{% set ns = namespace(prod=false) %}
 {% for s in c.stages %}
-  <div class="step {{ s.state }}{% if s.key in PROD_SIDE %} prodside{% endif %}">
-    <div class="gl">{{ glyph(s) }}</div>
+  <div class="step {{ s.state }}{% if s.key in PROD_SIDE %} prodside{% if not ns.prod %} first{% endif %}{% set ns.prod = true %}{% endif %}"{% if s.tip %} title="{{ s.tip }}"{% endif %}>
+    {{ icon(s.state) }}
     <div class="lb">{% if s.href %}<a href="{{ s.href }}">{{ s.label }}</a>{% else %}{{ s.label }}{% endif %}</div>
-    <div class="dt">{{ s.detail }}</div>
-    {% if s.preview %}<div class="pv">✗ {{ s.preview }}</div>{% endif %}
+    {% if s.detail %}<div class="dt">{{ s.detail }}</div>{% endif %}
+    {% if s.blockers %}<div class="chips">{{ blockers(s) }}</div>{% endif %}
   </div>
 {% endfor %}
 </div>
 
 {% if f.failing %}
-<h2>Findings over the threshold</h2>
-<p class="muted">Reported only in {{ f.deploy.env_dir if f.deploy else 'dev' }}; each one blocks a promotion to prod until it is fixed or recorded as a false positive (VEX, an ignore with a reason and an expiry, or <code>.gitleaksignore</code>).</p>
-<table><tr><th>Severity</th><th>Category</th><th>Rule</th><th>Where</th><th>Fix</th></tr>
+<h2>Findings <span class="pill s-fail" title="Reported in {{ f.deploy.env_dir if f.deploy else 'dev' }}; each blocks a promotion until fixed or recorded as not affected (VEX, or an ignore with a reason and expiry)">{{ f.failing | length }} block prod</span></h2>
+<table><tr><th>Severity</th><th>Category</th><th>Rule</th><th>Where</th><th>Fixed in</th></tr>
 {% for x in f.failing %}
-<tr><td class="s-fail">{{ x.severity }}</td><td>{{ x.category }}</td><td><code>{{ x.rule }}</code></td><td><code>{{ x.package or x.location }}{% if x.version %} {{ x.version }}{% endif %}</code></td><td>{% if x.fixed_in %}fixed in {{ x.fixed_in | join(', ') }}{% endif %}</td></tr>
+<tr><td>{{ sev(x.severity) }}</td><td>{{ x.category }}</td><td><code>{{ x.rule }}</code></td><td><code>{{ x.package or x.location }}{% if x.version %} {{ x.version }}{% endif %}</code></td><td>{{ (x.fixed_in or []) | join(', ') }}</td></tr>
 {% endfor %}
 </table>
 {% endif %}
 
 {% if f.promotion %}
 {% set p = f.promotion %}{% set pr = p.pr or {} %}
-<h2>Promotion <code>{{ p.id }}</code></h2>
-<div class="who">
-  <span class="muted">Code by</span><span>{{ c.author }}</span>
-  <span class="muted">Requested by</span><span>{{ p.requested_by }}{% if p.reason %} <span class="muted">: {{ p.reason }}</span>{% endif %}</span>
-  <span class="muted">Pull request</span><span>{% if pr %}<a href="{{ pr.url }}">#{{ pr.number }}</a> opened by {{ pr.author }} · {{ pr.state }}{% if pr.merged %}, merged by {{ pr.merged_by }}{% endif %}{% else %}none{% endif %}</span>
-  <span class="muted">Approved by</span><span>{{ (pr.approvers or []) | join(', ') or '—' }}</span>
-  <span class="muted">Not before</span><span>{{ p.not_before }}</span>
-  {% if p.security %}<span class="muted">Security at apply</span><span>{{ p.security }}</span>{% endif %}
-</div>
+{% set approvers = (pr.approvers or []) | reject('in', [p.requested_by, pr.author]) | list %}
+<h2>Promotion <code>{{ p.id }}</code>
+  {% if pr and pr.state == 'open' and not approvers %}<span class="pill s-warn" title="Awaiting an approver other than {{ p.requested_by }}{% if pr.author and pr.author != p.requested_by %} and {{ pr.author }}{% endif %}">Pending</span>{% endif %}</h2>
+<dl class="kv">
+  <dt>Author</dt><dd>{{ c.author }}</dd>
+  <dt>Requested</dt><dd>{{ p.requested_by }}{% if p.reason %} <span class="muted">· {{ p.reason }}</span>{% endif %}</dd>
+  <dt>Pull request</dt><dd>{% if pr %}<a href="{{ pr.url }}">#{{ pr.number }}</a> <span class="muted">· {{ 'merged by ' ~ pr.merged_by if pr.merged else pr.state }}</span>{% else %}—{% endif %}</dd>
+  <dt>Approved</dt><dd>{{ (pr.approvers or []) | join(', ') or '—' }}</dd>
+  <dt>Not before</dt><dd>{{ p.not_before | ts }}</dd>
+  {% if p.security %}<dt>Gate at apply</dt><dd>{{ p.security }}</dd>{% endif %}
+</dl>
 {% if pr and pr.state == 'open' %}
-  {% if not user %}
-  <p>{% if auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in</a> to approve or merge.{% endif %}</p>
-  {% elif user.login in (p.requested_by, pr.author) %}
-  <p class="s-warn">You {{ 'requested' if user.login == p.requested_by else 'opened' }} this promotion, so you can't approve it: ask someone else.</p>
+<p>
+  {% if not user %}{% if auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in to approve</a>{% endif %}
+  {% elif user.login in (p.requested_by, pr.author) %}<button disabled title="You {{ 'requested' if user.login == p.requested_by else 'opened' }} this promotion; a second person approves it">Approve</button>
   {% else %}
-  <p>
-    <form class="inline" method="post" action="/promotions/{{ p.id }}/approve"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary">Approve as {{ user.login }}</button></form>
-    <form class="inline" method="post" action="/promotions/{{ p.id }}/merge"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary">Approve by merging</button></form>
-    <span class="muted">Applied at or after {{ p.not_before }}, after a last security scan.</span>
-  </p>
+  <form class="inline" method="post" action="/promotions/{{ p.id }}/approve">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button>Approve</button></form>
+  <form class="inline" method="post" action="/promotions/{{ p.id }}/merge">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary" title="Merging approves it; it is applied when due, after a final scan">Merge</button></form>
   {% endif %}
+</p>
 {% endif %}
-<div class="rule"><strong>Two people for prod.</strong> The approval or the merge must come from someone other than <strong>{{ p.requested_by }}</strong> (who requested it){% if pr.author and pr.author != p.requested_by %} and <strong>{{ pr.author }}</strong> (who opened the PR){% endif %}. Forgejo would let the requester merge it; the platform would refuse to apply it. Writing the code doesn't disqualify anyone.</div>
 {% endif %}
 
 {% if f.jobs %}

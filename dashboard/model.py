@@ -57,6 +57,7 @@ class CommitRow:
     repo: str
     stages: list[Stage]
     overall: str
+    not_in_cicd: str = ""        # "paused" or "waiting" (tenant at its branch limit)
 
 
 @dataclass
@@ -144,11 +145,12 @@ class Model:
         if branch and branch != app.dev_branch:
             if branch in st.paused.get(app.name, {}):
                 p = st.paused[app.name][branch]
-                f.not_in_cicd = f"paused by {p.get('by', '?')}"
+                f.not_in_cicd, f.not_in_cicd_why = "paused", f"Paused by {p.get('by', '?')}"
             elif not f.branch_excluded and app.env(f"branch-{branch_slug(app.name, branch)}") is None:
                 u = self.usage(app.tenant)
                 if u.used >= u.limit:
-                    f.not_in_cicd = f"tenant {app.tenant} is at its limit of {u.limit} branch environments"
+                    f.not_in_cicd = "waiting"
+                    f.not_in_cicd_why = f"Tenant {app.tenant} is at its limit of {u.limit} branch environments"
         deploys = deploys if deploys is not None else self.state_repo.deploys(app.name)
         dep = next((d for d in deploys if d.commit == sha), None)
         if dep:
@@ -182,7 +184,7 @@ class Model:
         f = self.facts(app, repo, commit, branch, jobs, deploys)
         stages = linked(app, destiny(f))
         return CommitRow(sha=f.sha, short=f.sha[:7], message=f.message, author=f.author, when=f.when,
-                         branch=branch, repo=repo, stages=stages, overall=overall(stages))
+                         branch=branch, repo=repo, stages=stages, overall=overall(stages), not_in_cicd=f.not_in_cicd)
 
     def branches(self, app: AppInfo) -> list[BranchRow]:
         deploys = self.state_repo.deploys(app.name)
@@ -194,9 +196,8 @@ class Model:
                 head = self.commit_row(app, repo, b["commit"], b["name"], jobs, deploys)
                 excluded = b["name"] != app.dev_branch and any(fnmatch.fnmatch(b["name"], p) for p in app.exclude)
                 paused = self.state().paused.get(app.name, {}).get(b["name"])
-                waiting = "limit" in next((s.detail for s in head.stages if s.key == "tests"), "")
                 rows.append(BranchRow(name=b["name"], repo=repo, env=app.env(env_dir), head=head, active=not excluded,
-                                      paused=paused, waiting=waiting))
+                                      paused=paused, waiting=head.not_in_cicd == "waiting"))
         return sorted(rows, key=lambda r: (r.name != app.dev_branch, r.name))
 
     def history(self, app: AppInfo, branch: str | None = None, limit: int = 8) -> list[CommitRow]:
@@ -256,5 +257,5 @@ class Model:
         f = self.facts(app, repo, c, branch)
         stages = linked(app, destiny(f))
         row = CommitRow(sha=f.sha, short=f.sha[:7], message=f.message, author=f.author, when=f.when,
-                        branch=branch, repo=repo, stages=stages, overall=overall(stages))
+                        branch=branch, repo=repo, stages=stages, overall=overall(stages), not_in_cicd=f.not_in_cicd)
         return row, f

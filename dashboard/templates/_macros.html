@@ -1,9 +1,28 @@
-{% macro glyph(s) -%}
-<span class="s-{{ s.state }}">{% if s.state == 'run' %}<span class="spin">◌</span>{% else %}{{ s.glyph }}{% endif %}</span>
+{% set WORD = {'ok': 'done', 'warn': 'warning', 'fail': 'failed', 'run': 'running', 'todo': 'pending', 'skip': 'skipped', 'na': 'not applicable'} %}
+{% set BLOCKER = {'vuln': 'CVE', 'secret': 'Secret', 'sast': 'Code', 'external': 'Finding'} %}
+{% macro icon(state, title='') -%}
+<svg class="i s-{{ state }}{% if state == 'run' %} spin{% endif %}" role="img" aria-label="{{ title or WORD.get(state, state) }}">{% if title %}<title>{{ title }}</title>{% endif %}<use href="/static/icons.svg#{{ state }}"/></svg>
+{%- endmacro %}
+{% macro blocked_tip(s) -%}
+{% for b in s.blockers %}Blocks prod: {{ b.rules | join(', ') }}{% if not loop.last %}; {% endif %}{% endfor %}
+{%- endmacro %}
+{% macro blockers(s) -%}
+{% for b in s.blockers %}<span class="pill s-fail" title="Blocks prod: {{ b.rules | join(', ') }}">{{ icon('fail') }}{{ BLOCKER.get(b.category, b.category | capitalize) }}{% if b.rules | length > 1 %} ×{{ b.rules | length }}{% endif %}</span>{% endfor %}
 {%- endmacro %}
 {% macro meter(stages) -%}
-<span class="meter">{% for s in stages %}<span class="g{% if s.preview %} preview{% endif %}" title="{{ s.label }}{% if s.detail %}: {{ s.detail }}{% endif %}{% if s.preview %} ({{ s.preview }}){% endif %}">{{ glyph(s) }}</span>{% endfor %}</span>
+<span class="meter">{% for s in stages %}<span class="g{% if s.blockers %} blocked{% endif %}">{{ icon(s.state, s.label ~ (': ' ~ s.detail if s.detail else '') ~ (' · ' ~ s.tip if s.tip else '') ~ (' · ' ~ blocked_tip(s) if s.blockers else '')) }}</span>{% endfor %}</span>
 {%- endmacro %}
 {% macro gate(sec) -%}
-{% if sec %}<span class="pill s-{{ {'pass':'ok','warn':'warn','fail':'fail'}.get(sec.status, 'todo') }}">security {{ sec.status }}</span>{% else %}<span class="pill s-todo">no security record</span>{% endif %}
+{% set st = {'pass': 'ok', 'warn': 'warn', 'fail': 'fail'}.get(sec.status, 'todo') if sec else 'skip' %}
+<span class="pill s-{{ st }}" title="Security gate{% if not sec %}: no record{% endif %}">{{ icon(st) }}{{ sec.status if sec else 'none' }}</span>
 {%- endmacro %}
+{% macro score(a, e) -%}
+{% if e.assessment %}<a class="pill plain" href="/a/{{ a.name }}/controls" title="Objectives satisfied (self-assessment)">{{ e.assessment.counts.satisfied }}/{{ e.assessment.objectives | length }}</a>{% endif %}
+{%- endmacro %}
+{% macro sev(s) -%}
+<span class="pill s-{{ {'critical': 'fail', 'high': 'fail', 'medium': 'warn'}.get(s, 'todo') }}">{{ s }}</span>
+{%- endmacro %}
+{% macro legend(items) -%}
+<div class="legend">{% for state, word in items %}<span>{{ icon(state) }}{{ word }}</span>{% endfor %}</div>
+{%- endmacro %}
+{% macro csrf(user) -%}<input type="hidden" name="csrf" value="{{ user.csrf }}">{%- endmacro %}

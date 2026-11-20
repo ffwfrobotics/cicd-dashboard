@@ -1,6 +1,6 @@
 """cicd-dashboard: the information system owner's view of their applications on cicd-ref-arch.
 
-Tenants, applications, environments, branches and each commit's road to prod (steps 1-2); the
+Tenants, applications, environments, branches and each commit's pipeline (steps 1-2); the
 commit's OSCAL self-assessment and control coverage (3); IT Security's findings as failing tests
 (4); advisories matched against live SBOMs (5); release packages for IT Security (6). Pages update
 live over server-sent events; the same data is JSON under /api/.
@@ -21,20 +21,38 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from . import auth
 from . import compliance as comp
-from .destiny import GLYPH, PROD_SIDE, STAGES
+from .destiny import PROD_SIDE, STAGES
 from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
-templates.env.globals.update(STAGES=STAGES, GLYPH=GLYPH, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
+BRAND = os.environ.get("DASHBOARD_BRAND", "cicd-dashboard")
+THEME = Path(os.environ.get("DASHBOARD_THEME") or HERE / "static" / "theme.css")
+
+
+def ts(value) -> Markup:
+    """A time as 'Nov 20 05:36', with the full UTC time on hover."""
+    v = str(value or "")
+    try:
+        t = dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return Markup(escape(v[:16].replace("T", " ")))
+    if t.tzinfo:
+        t = t.astimezone(dt.timezone.utc)
+    return Markup(f'<time datetime="{escape(v)}" title="{t:%Y-%m-%d %H:%M} UTC">{t:%b} {t.day} {t:%H:%M}</time>')
+
+
+templates.env.filters["ts"] = ts
+templates.env.globals.update(STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
                              COMMIT=os.environ.get("APP_COMMIT", "dev"), FORGE=os.environ.get("FORGE_URL", "https://forge.goblincorps.com"))
 model = Model()
 
@@ -75,6 +93,12 @@ def app_or_404(name: str):
 
 
 # ---------------------------------------------------------------- pages and fragments
+
+
+@app.get("/theme.css")
+def theme_css():
+    """The organisation's theme: static/theme.css, or the file DASHBOARD_THEME names."""
+    return Response(THEME.read_bytes(), media_type="text/css", headers={"Cache-Control": "max-age=300"})
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -180,15 +204,14 @@ async def findings_import(request: Request, name: str, csrf: str = Form(""), fil
     data = await file.read()
     new = comp.parse_tenable(data, user.login, file.filename or "upload.csv")
     if not new:
-        return back(f"/a/{name}/findings", "No findings in that file (a Tenable CSV with Plugin ID, Host, Risk, Name...).")
+        return back(f"/a/{name}/findings", "No findings in that file.")
     with auth.as_user(user) as c:
         led, added, seen = comp.merge_import(comp.ledger(c, user.login, name), new)
         ok, err = comp.save_ledger(c, name, led, f"ledger {name}: import {file.filename} ({added} new, {seen} seen again)")
     comp.forget(user.login)
     if not ok:
-        return back(f"/a/{name}/findings", f"Not saved: the forge answered {err}")
-    return back(f"/a/{name}/findings", f"Imported {added} new findings ({seen} already known) as {user.login}. "
-                                        "Every environment of the app is re-assessed within a few minutes, without a rebuild.")
+        return back(f"/a/{name}/findings", f"Not saved: {err}")
+    return back(f"/a/{name}/findings", f"Imported {added} new, {seen} known. Re-assessing.")
 
 
 @app.post("/a/{name}/findings/{fid}/{verb}")
@@ -199,13 +222,13 @@ def findings_act(request: Request, name: str, fid: str, verb: str, csrf: str = F
     if verb not in ("accept", "close", "reopen"):
         raise HTTPException(400, "accept, close or reopen")
     if verb in ("accept", "close") and not reason.strip():
-        return back(f"/a/{name}/findings", "Say why: the reason goes to the assessor with the claim.")
+        return back(f"/a/{name}/findings", "A reason is required.")
     if verb == "accept":
         try:
             if dt.date.fromisoformat(expires) <= dt.date.today():
                 raise ValueError
         except ValueError:
-            return back(f"/a/{name}/findings", "A risk acceptance needs an expiry date in the future (YYYY-MM-DD).")
+            return back(f"/a/{name}/findings", "The expiry must be a future date.")
     with auth.as_user(user) as c:
         led = comp.ledger(c, user.login, name)
         f = next((x for x in led if x["id"] == fid), None)
@@ -221,7 +244,7 @@ def findings_act(request: Request, name: str, fid: str, verb: str, csrf: str = F
             f.pop("closed", None)
         ok, err = comp.save_ledger(c, name, led, f"ledger {name}: {verb} {fid}" + (f": {reason.strip()[:80]}" if reason else ""))
     comp.forget(user.login)
-    return back(f"/a/{name}/findings", (f"{fid}: {verb}ed as {user.login}; re-assessing." if ok else f"Not saved: {err}"))
+    return back(f"/a/{name}/findings", (f"{fid} {dict(accept='accepted', close='closed', reopen='reopened')[verb]}. Re-assessing." if ok else f"Not saved: {err}"))
 
 
 # ---------------------------------------------------------------- step 5: advisories
@@ -247,7 +270,7 @@ def advisories_announce(request: Request, csrf: str = Form(""), id: str = Form(.
     user = require_compliance_write(request, csrf)
     aid = re.sub(r"[^A-Za-z0-9._-]+", "-", id.strip())[:80]
     if not aid or not affected.strip():
-        return back("/advisories", "An advisory needs an id and an affected range (e.g. <3.1.10).")
+        return back("/advisories", "ID and affected range are required.")
     adv = {"id": aid, "title": title.strip() or aid, "severity": severity if severity in ("critical", "high", "medium", "low") else "high",
            "package": {"name": name.strip(), **({"ecosystem": ecosystem.strip()} if ecosystem.strip() else {}),
                        "affected": affected.strip(), **({"fixed": fixed.strip()} if fixed.strip() else {})},
@@ -259,8 +282,8 @@ def advisories_announce(request: Request, csrf: str = Form(""), id: str = Form(.
     comp.forget(user.login)
     if not ok:
         return back("/advisories", f"Not saved: {err}")
-    where = ", ".join(f"{a.name}/{e.dir}" for a, e, _ in hits) or "no live environment"
-    return back("/advisories", f"Announced {aid} as {user.login}. It matches {where}; only those are re-scanned now.")
+    where = ", ".join(f"{a.name}/{e.dir}" for a, e, _ in hits)
+    return back("/advisories", f"Announced {aid}. " + (f"Re-scanning {where}." if where else "Nothing live is affected."))
 
 
 @app.post("/advisories/osv", response_class=HTMLResponse)
@@ -289,11 +312,11 @@ def release_rule(cfg: dict) -> dict:
 
 def may_release(user, perms, rule: dict, author: str) -> tuple[bool, str]:
     if user.login == author:
-        return False, "you prepared this package; someone else has to release it"
+        return False, "Awaiting a second approver"
     if rule["rule"] == "approvers" and user.login not in rule["approvers"]:
-        return False, f"releases need one of: {', '.join(rule['approvers'])}"
+        return False, f"Awaiting one of: {', '.join(rule['approvers'])}"
     if not (perms or {}).get("push"):
-        return False, f"releases need merge rights on {comp.COMPLIANCE_REPO}"
+        return False, f"Needs write access to {comp.COMPLIANCE_REPO}"
     return True, ""
 
 
@@ -319,7 +342,7 @@ def releases_prepare(request: Request, name: str, csrf: str = Form(""), envs: li
     a = app_or_404(name)
     envs = [e for e in envs if a.env(e)]
     if not envs:
-        return back(f"/a/{name}/releases", "Choose at least one environment to release.")
+        return back(f"/a/{name}/releases", "Choose at least one environment.")
     st = model.state()
     rid = f"{name}-{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     ops, manifest = comp.release_package(rid, name, envs, st.files, st.head, user.login, note.strip(), model.state_repo.cluster)
@@ -342,8 +365,7 @@ def releases_prepare(request: Request, name: str, csrf: str = Form(""), envs: li
     comp.forget(user.login)
     if r.status_code not in (200, 201):
         return back(f"/a/{name}/releases", f"Package written, pull request not opened: {comp._err(r)}")
-    return back(f"/a/{name}/releases", f"Package {rid} prepared as {user.login} ({len(manifest['files'])} files). "
-                                        "Someone else releases it by merging.")
+    return back(f"/a/{name}/releases", f"Prepared {rid} ({len(manifest['files'])} files).")
 
 
 @app.post("/releases/{number}/{verb}")
@@ -361,7 +383,7 @@ def releases_review(request: Request, number: int, verb: str, csrf: str = Form("
         app_name = rid.rsplit("-", 1)[0]
         ok, why = may_release(user, perms, release_rule(comp.app_config(c, user.login, app_name)), pr["user"]["login"])
         if not ok:
-            return back(url, why[0].upper() + why[1:] + ".")
+            return back(url, why + ".")
         if verb == "approve":
             r = c.post(f"/repos/{comp.COMPLIANCE_REPO}/pulls/{number}/reviews", json={"event": "APPROVED", "body": "Reviewed in cicd-dashboard."})
         elif verb == "merge":
@@ -372,7 +394,7 @@ def releases_review(request: Request, number: int, verb: str, csrf: str = Form("
     comp.forget(user.login)
     if r.status_code not in (200, 201, 204):
         return back(url, f"{verb} failed: {forge_error(r)}")
-    return back(url, f"Released {rid} to IT Security as {user.login}." if verb == "merge" else f"Approved {rid} as {user.login}.")
+    return back(url, f"Released {rid}." if verb == "merge" else f"Approved {rid}.")
 
 
 # ---------------------------------------------------------------- sign-in
@@ -422,6 +444,8 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
     url = next if next.startswith("/") else f"/a/{name}"
     if action not in ("pause", "resume", "remove-env", "request-promotion"):
         raise HTTPException(400, "unknown action")
+    if re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d", not_before):     # a datetime-local value, meant as UTC
+        not_before += ":00Z"
     repo = a.repos[0]
     with auth.as_user(user) as c:
         if repo == STATE_REPO:
@@ -435,11 +459,8 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
                                                              "not_before": not_before, "reason": reason}})
     if r.status_code not in (200, 201, 204):
         return back(url, f"{action} was not started: {forge_error(r)}")
-    what = {"request-promotion": "Promotion requested: the PR opens in about a minute",
-            "pause": f"Pausing {branch}: its environment goes away within a minute",
-            "resume": f"Resuming {branch}: its next push goes through CI/CD again",
-            "remove-env": f"Removing the environment of {branch}"}[action]
-    return back(url, f"{what} (as {user.login}).")
+    return back(url, {"request-promotion": "Promotion requested.", "pause": f"Pausing {branch}.",
+                      "resume": f"Resumed {branch}.", "remove-env": f"Removing the environment of {branch}."}[action])
 
 
 def promotion_or_404(pid: str):
@@ -458,8 +479,7 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
     p = promotion_or_404(pid)
     url = next if next.startswith("/") else "/"
     if user.login in (p.requested_by, p.pr["author"]):
-        return back(url, f"You {'requested' if user.login == p.requested_by else 'opened'} this promotion, so your "
-                         "approval wouldn't count: the platform refuses to apply it. Ask someone else.")
+        return back(url, "A second person has to approve this promotion.")
     with auth.as_user(user) as c:
         if verb == "approve":
             r = c.post(f"/repos/{STATE_REPO}/pulls/{p.pr['number']}/reviews",
@@ -472,8 +492,7 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
     if r.status_code not in (200, 201, 204):
         return back(url, f"{verb} failed: {forge_error(r)}")
     model.forge._cache.clear()
-    return back(url, f"{'Approved' if verb == 'approve' else 'Merged'} as {user.login}. "
-                     + ("It is applied once due, after a final security scan." if verb == "merge" else ""))
+    return back(url, "Approved." if verb == "approve" else "Merged. Applied when due.")
 
 
 # ---------------------------------------------------------------- live updates

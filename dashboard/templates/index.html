@@ -1,24 +1,23 @@
 {% extends "base.html" %}
-{% from "_macros.html" import gate %}
+{% from "_macros.html" import gate, score %}
 {% block body %}
-<div class="crumbs">Tenants</div>
-<h1>Applications</h1>
 {% for tenant, apps in tenants.items() %}
-<h2>Tenant <code>{{ tenant }}</code></h2>
+<h2><span class="muted">Tenant</span> {{ tenant }}</h2>
 <div class="cards">
 {% for a in apps %}
   <div class="card">
     <h3><a href="/a/{{ a.name }}">{{ a.name }}</a></h3>
-    <div class="muted">{% for r in a.repos %}<code>{{ r }}</code>{% if a.path != '.' %} <code>{{ a.path }}</code>{% endif %}{% endfor %}</div>
-    <table style="margin-top:.4rem">
+    <div class="muted small">{% for r in a.repos %}<code>{{ r }}</code>{% if a.path != '.' %} <code>{{ a.path }}</code>{% endif %} {% endfor %}</div>
+    <table>
     {% for e in a.envs if e.kind != 'branch' %}
-      <tr><td>{{ e.dir }}</td><td><a href="/a/{{ a.name }}/c/{{ e.commit }}"><code>{{ (e.commit or '')[:7] }}</code></a></td><td>{{ gate(e.security) }}</td></tr>
+      <tr><td>{{ e.dir }}</td><td><a href="/a/{{ a.name }}/c/{{ e.commit }}"><code>{{ (e.commit or '')[:7] }}</code></a></td><td><span class="chips">{{ gate(e.security) }}{{ score(a, e) }}</span></td></tr>
     {% endfor %}
-      <tr><td class="muted" colspan="3">{{ a.envs | selectattr('kind', 'equalto', 'branch') | list | length }} branch environment(s)</td></tr>
     </table>
+    {% set n = a.envs | selectattr('kind', 'equalto', 'branch') | list | length %}
+    {% if n %}<div class="muted small">+{{ n }} branch{{ 'es' if n != 1 }}</div>{% endif %}
   </div>
 {% endfor %}
 </div>
+{% else %}<div class="empty">No applications enrolled.</div>
 {% endfor %}
-<p class="muted" style="margin-top:2rem">State repo <code>{{ state.head[:7] }}</code>. Everything here is read from git and Forgejo; the dashboard stores nothing. <a href="/advisories">Advisories</a> across all applications.</p>
 {% endblock %}
