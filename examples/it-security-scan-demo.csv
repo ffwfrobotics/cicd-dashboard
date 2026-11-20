@@ -1,0 +1,8 @@
+"Plugin ID","CVE","CVSS v3.0 Base Score","Risk","Host","Protocol","Port","Name","Synopsis","Description","Solution","See Also","Plugin Output"
+"990001","","7.5","High","demo.c-local.k.ffwf.net","tcp","443","gunicorn < 25.0 Unsupported Version (demo)","The remote web server runs an unsupported version of gunicorn.","Demo finding for cicd-ref-arch: the organisation supports gunicorn 25.0 and later only.","Upgrade gunicorn to 25.0 or later.","","  Path              : /app/.venv/lib/python3.13/site-packages/gunicorn
+  Installed version : 23.0.0
+  Fixed version     : 25.0
+"
+"142960","","5.3","Medium","demo.c-local.k.ffwf.net","tcp","443","HSTS Missing From HTTPS Server (RFC 6797)","The remote web server is not enforcing HSTS.","The remote web server is not enforcing HSTS, as defined by RFC 6797.","Configure the remote web server to use HSTS.","https://tools.ietf.org/html/rfc6797","  HTTP Strict-Transport-Security (HSTS) header is missing from https://demo.c-local.k.ffwf.net/
+"
+"84502","","0.0","None","demo.c-local.k.ffwf.net","tcp","443","HSTS Missing From HTTPS Server (informational duplicate)","","","","",""

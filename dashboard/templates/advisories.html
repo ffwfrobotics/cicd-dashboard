@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Advisories · cicd-dashboard{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Tenants</a> › advisories</div>
+<h1>Advisories</h1>
+<p>A vulnerability announced here is matched against the SBOM every live environment keeps ({{ npkgs }} distinct packages today). Only the environments it hits are re-scanned and re-assessed; a prod environment running an affected image turns red. Nothing is undeployed automatically. Every live SBOM is also re-scanned daily with the newest vulnerability database.</p>
+{% if not perms %}
+<p>{% if not user and auth_enabled %}<a class="btn" href="/auth/login?next=/advisories">Sign in</a> to see{% else %}You can't see{% endif %} the advisories (<code>{{ repo }}</code>).</p>
+{% else %}
+<table>
+<tr><th>Advisory</th><th>Package</th><th>Hits</th></tr>
+{% for v in advs %}
+<tr><td><code>{{ v.id }}</code> <span class="pill">{{ v.severity }}</span><br>{{ v.title }}<div class="muted small">{{ v.announced_by }} · {{ (v.announced or '')[:16] | replace('T', ' ') }}{% if v.source %} · {{ v.source }}{% endif %}</div></td>
+  <td class="small"><code>{{ v.package.name }}</code> {{ v.package.affected }}{% if v.package.fixed %} · fixed in {{ v.package.fixed }}{% endif %}{% if v.package.ecosystem %} <span class="muted">({{ v.package.ecosystem }})</span>{% endif %}</td>
+  <td class="small">{% for a, e, h in hits[v.id] %}<div><a href="/a/{{ a.name }}/c/{{ e.commit }}">{{ a.name }}/{{ e.dir }}</a> {% if e.kind == 'prod' %}<span class="pill s-fail">prod</span>{% endif %} <span class="muted">{{ h | map(attribute='version') | join(', ') }}</span></div>{% else %}<span class="muted">no live environment</span>{% endfor %}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">None announced.</td></tr>{% endfor %}
+</table>
+{% if perms.push %}
+<h2>Announce a vulnerability</h2>
+<form method="post" action="/advisories">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <input name="id" placeholder="id (CVE-..., GHSA-..., or yours)" size="24" required> <input name="title" placeholder="title" size="36">
+  <select name="severity"><option>critical</option><option selected>high</option><option>medium</option><option>low</option></select><br>
+  <input name="name" placeholder="package" size="16" required> <input name="ecosystem" placeholder="ecosystem (pypi, apk, npm...)" size="22">
+  <input name="affected" placeholder="affected, e.g. <3.1.10" size="18" required> <input name="fixed" placeholder="fixed in" size="10">
+  <input name="source" placeholder="source URL" size="28"> <button class="primary">Announce</button>
+</form>
+<form method="post" action="/advisories/osv" style="margin-top:1rem"><input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <button>Ask OSV about the live packages</button> <span class="muted small">sends package names and versions (PyPI, npm, Go) to api.osv.dev; nothing else</span></form>
+{% if osv is not none %}
+<h2>OSV knows {{ osv | length }} vulnerabilities not announced here</h2>
+<table>{% for o in osv %}<tr><td><code>{{ o.id }}</code></td><td class="small">{{ o.package }} {{ o.version }} <span class="muted">{{ o.ecosystem }}</span><div class="muted">{{ o.summary }}</div></td>
+<td><form method="post" action="/advisories"><input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="id" value="{{ o.id }}"><input type="hidden" name="title" value="{{ o.summary }}"><input type="hidden" name="severity" value="{{ o.severity if o.severity in ['critical','high','medium','low'] else 'high' }}"><input type="hidden" name="name" value="{{ o.package }}"><input type="hidden" name="ecosystem" value="{{ o.ecosystem }}"><input type="hidden" name="affected" value="{{ '<' ~ o.fixed if o.fixed else '==' ~ o.version }}"><input type="hidden" name="fixed" value="{{ o.fixed }}"><input type="hidden" name="source" value="https://osv.dev/vulnerability/{{ o.id }}"><button>Announce</button></form></td></tr>
+{% else %}<tr><td class="muted">Nothing new.</td></tr>{% endfor %}</table>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

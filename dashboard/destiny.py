@@ -59,6 +59,8 @@ class Facts:
     prod_superseded: bool = False
     branch_excluded: bool = False
     not_in_cicd: str = ""             # why this branch's pushes skip CI/CD (paused, tenant limit)
+    assessment: dict | None = None    # the commit's OSCAL self-assessment (summary)
+    external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
 
 
@@ -136,9 +138,30 @@ def destiny(f: Facts) -> list[Stage]:
             st[k].state = "skip"
         st["build"].detail = "tests failed"
 
-    # assessment and review: Plan 2 (OSCAL) is not built yet
-    st["assessed"].detail = "OSCAL self-assessment: coming"
-    st["review"].detail = "findings triage: coming"
+    # the commit's OSCAL self-assessment, and IT Security's findings as tests
+    a = f.assessment
+    if a:
+        gaps = assessment_gaps(a)
+        n, total = a["counts"]["satisfied"], len(a["objectives"])
+        unc = a["coverage"].get("uncovered", 0)
+        st["assessed"].state = "warn" if gaps["blocking"] else "ok"
+        st["assessed"].detail = f"{n}/{total} objectives satisfied" + (f", {unc} uncovered" if unc else "") + (
+            f"; open: {', '.join(gaps['blocking'][:3])}" if gaps["blocking"] else "")
+        st["assessed"].href = "controls"
+    elif f.deploy:
+        st["assessed"].state = "skip"
+        st["assessed"].detail = "built before self-assessment existed"
+    ext = f.external or []
+    if ext:
+        bad = [t for t in ext if t["result"] == "fail"]
+        acc = [t for t in ext if t["result"] == "accepted"]
+        st["review"].state = "warn" if bad else "ok"
+        st["review"].detail = (f"{len(bad)} of IT Security's findings open: " + ", ".join(t["test"].split("/", 1)[1] for t in bad[:3])
+                               if bad else f"IT Security: {len(ext)} findings, none open") + (f"; {len(acc)} risk accepted" if acc else "")
+        st["review"].href = "findings"
+    elif a:
+        st["review"].state = "ok"
+        st["review"].detail = "nothing from IT Security"
 
     # promotion side
     p = f.promotion
@@ -197,6 +220,21 @@ def destiny(f: Facts) -> list[Stage]:
         st["deployed"].state = "fail"
 
     return [st[k] for k, _ in STAGES]
+
+
+# failing evidence of these kinds would block a prod promotion that requires the assessment
+BLOCKING_KINDS = ("findings", "scan", "sbom", "ci-result", "gate", "vuln-db", "attested")
+
+
+def assessment_gaps(a: dict) -> dict:
+    """{'blocking': objective ids whose failing evidence would block prod, 'other': the rest unsatisfied}"""
+    blocking, other = [], []
+    for o in a["objectives"]:
+        if o["state"] == "satisfied":
+            continue
+        bad = [e for e in o.get("evidence", []) if not e["holds"] and (e.get("selector") or "").split(":")[0] in BLOCKING_KINDS]
+        (blocking if bad and o["coverage"] not in ("uncovered", "not-applicable") else other).append(o["id"])
+    return {"blocking": blocking, "other": other}
 
 
 def overall(stages: list[Stage]) -> str:

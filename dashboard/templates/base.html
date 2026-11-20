@@ -41,6 +41,11 @@
   form.inline { display: inline; } button, .btn { font: inherit; font-size: .85rem; padding: .15rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--chip); color: var(--fg); cursor: pointer; text-decoration: none; }
   button.primary { border-color: var(--ok); color: var(--ok); } button.danger { border-color: var(--fail); color: var(--fail); }
   .row-actions { white-space: nowrap; } input { font: inherit; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .tabs { display: flex; gap: .2rem; border-bottom: 1px solid var(--line); margin: -.2rem 0 1rem; flex-wrap: wrap; }
+  .tabs a { padding: .35rem .7rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs a.on { color: var(--fg); border-bottom-color: var(--fg); }
+  .grid td.c { text-align: center; white-space: nowrap; } .small { font-size: .82rem; }
+  details summary { cursor: pointer; } textarea { font: inherit; }
 </style>
 </head>
 <body hx-ext="sse" sse-connect="/events">

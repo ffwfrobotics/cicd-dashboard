@@ -24,6 +24,13 @@ def branch_slug(app: str, branch: str) -> str:
     return s + "-br" if s in ("dev", "prod") else s
 
 
+def linked(app, stages: list[Stage]) -> list[Stage]:
+    for s in stages:
+        if s.href in ("controls", "findings"):
+            s.href = f"/a/{app.name}/{s.href}"
+    return stages
+
+
 @dataclass
 class AppInfo:
     name: str
@@ -153,11 +160,14 @@ class Model:
                         "superseded_by": cur.commit if (cur and not live) else None}
             if live:
                 f.security, f.failing = cur.security, cur.failing
+                f.assessment, f.external = cur.assessment, cur.external
             else:
                 rec = self.state_repo.security_record_at(dep.state_sha, app.name, env_dir)
                 if rec:
                     f.security = rec.get("gate")
                     f.failing = [x for x in rec.get("findings", []) if x.get("outcome") == "fail"]
+                    f.external = rec.get("external") or []
+                f.assessment = self.state_repo.assessment_at(dep.state_sha, app.name, env_dir)
         prod = app.env("prod")
         f.in_prod = bool(prod and prod.commit and prod.commit.startswith(sha[:7]) and sha.startswith(prod.commit[:7]))
         promos = [p for p in st.promotions if p.app == app.name and p.commit and p.commit == sha]
@@ -170,7 +180,7 @@ class Model:
 
     def commit_row(self, app: AppInfo, repo: str, commit: dict, branch: str, jobs=None, deploys=None) -> CommitRow:
         f = self.facts(app, repo, commit, branch, jobs, deploys)
-        stages = destiny(f)
+        stages = linked(app, destiny(f))
         return CommitRow(sha=f.sha, short=f.sha[:7], message=f.message, author=f.author, when=f.when,
                          branch=branch, repo=repo, stages=stages, overall=overall(stages))
 
@@ -196,6 +206,45 @@ class Model:
         jobs, deploys = self._jobs(repo), self.state_repo.deploys(app.name)
         return [self.commit_row(app, repo, c, branch, jobs, deploys) for c in commits]
 
+    # ------------------------------------------------------------ controls (OSCAL self-assessment)
+    def controls(self, app: AppInfo) -> dict:
+        """Objectives as rows, environments as columns: each cell the objective's state there."""
+        envs = [e for e in app.envs if e.assessment]
+        rows: dict[str, dict] = {}
+        for e in envs:
+            for o in e.assessment["objectives"]:
+                text = re.sub(r"^the developer of the system, system component, or system service is required at all "
+                              r"post-design stages of the system development life cycle to ", "the developer is required to ", o["objective"])
+                r = rows.setdefault(o["id"], {"id": o["id"], "control": o["control"], "objective": text,
+                                              "layer": o.get("layer"), "coverage": o["coverage"], "cells": {}})
+                r["cells"][e.dir] = o
+        controls: dict[str, list] = {}
+        for r in rows.values():
+            controls.setdefault(r["control"], []).append(r)
+        return {"envs": envs, "controls": controls}
+
+    def advisory_hits(self, advisory: dict) -> list[tuple[AppInfo, Env, list[dict]]]:
+        """Which live environments' SBOMs have a package the advisory affects."""
+        from .versions import package_hits
+        out = []
+        for a in self.apps():
+            for e in a.envs:
+                hits = package_hits(e.packages, advisory.get("package") or {})
+                if hits:
+                    out.append((a, e, hits))
+        return out
+
+    def live_packages(self) -> list[dict]:
+        seen, out = set(), []
+        for a in self.apps():
+            for e in a.envs:
+                for p in e.packages:
+                    k = (p["ecosystem"], p["name"], p["version"])
+                    if k not in seen:
+                        seen.add(k)
+                        out.append(p)
+        return out
+
     def commit(self, app: AppInfo, sha: str, branch: str | None = None) -> tuple[CommitRow, Facts] | None:
         repo = app.repos[0]
         c = self.forge.get(f"/repos/{repo}/git/commits/{sha}?stat=false&files=false&verification=false")
@@ -205,7 +254,7 @@ class Model:
             dep = next((d for d in self.state_repo.deploys(app.name) if d.commit == c["sha"]), None)
             branch = dep.branch if dep else app.dev_branch
         f = self.facts(app, repo, c, branch)
-        stages = destiny(f)
+        stages = linked(app, destiny(f))
         row = CommitRow(sha=f.sha, short=f.sha[:7], message=f.message, author=f.author, when=f.when,
                         branch=branch, repo=repo, stages=stages, overall=overall(stages))
         return row, f

@@ -1,0 +1,1 @@
+<nav class="tabs">{% for href, label in [('', 'Road to prod'), ('/controls', 'Controls'), ('/findings', "IT Security's findings"), ('/releases', 'Releases')] %}<a href="/a/{{ a.name }}{{ href }}"{% if request.url.path == '/a/' ~ a.name ~ href %} class="on"{% endif %}>{{ label }}</a>{% endfor %}<a href="/advisories">Advisories</a></nav>

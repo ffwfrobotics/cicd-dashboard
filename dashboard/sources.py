@@ -64,6 +64,9 @@ class Env:
     security: dict | None          # the gate summary from security-record.json
     failing: list[dict] = field(default_factory=list)   # findings with outcome fail
     promotion: str | None = None
+    assessment: dict | None = None     # evidence/assessment-summary.json (the OSCAL self-assessment, short)
+    external: list[dict] = field(default_factory=list)  # IT Security's findings as tests, this env's last gate
+    packages: list[dict] = field(default_factory=list)  # from evidence/sbom.cdx.json: name, version, purl, ecosystem
 
 
 @dataclass
@@ -106,6 +109,7 @@ class State:
     paused: dict[str, dict]        # app -> {branch: {by, at}}
     limits: dict                   # tenants/_limits.yaml
     fetched: float
+    files: dict[str, bytes] = field(default_factory=dict, repr=False)   # envs/ as archived (release packages)
 
 
 DEPLOY_RE = re.compile(r"^deploy (dev|branch): (\S+) (\S+)")
@@ -195,6 +199,11 @@ class StateRepo:
                               state_sha=c["sha"], at=c["commit"]["committer"]["date"], run_url=run))
         return out
 
+    def assessment_at(self, state_sha: str, app: str, env_dir: str) -> dict | None:
+        path = f"envs/{self.cluster}/{app}/{env_dir}/evidence/assessment-summary.json"
+        raw = self.forge.get(f"/repos/{self.repo}/raw/{path}?ref={state_sha}", ttl=3600, raw=True)
+        return json.loads(raw) if raw else None
+
     def security_record_at(self, state_sha: str, app: str, env_dir: str) -> dict | None:
         path = f"envs/{self.cluster}/{app}/{env_dir}/security-record.json"
         raw = self.forge.get(f"/repos/{self.repo}/raw/{path}?ref={state_sha}", ttl=3600, raw=True)
@@ -222,12 +231,14 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
             meta = yaml.safe_load(files[p])
             d = p[: -len("cicd-env.yaml")]
             rec = json.loads(files[d + "security-record.json"]) if d + "security-record.json" in files else None
+            summ = json.loads(files[d + "evidence/assessment-summary.json"]) if d + "evidence/assessment-summary.json" in files else None
             envs.setdefault(meta["app"], []).append(Env(
                 app=meta["app"], dir=meta["dir"], kind=meta["env"], branch=meta.get("branch"),
                 commit=meta.get("commit"), image=meta["image"], hosts=meta.get("hosts", []),
                 rendered_at=meta.get("renderedAt"), security=(rec or {}).get("gate"),
                 failing=[f for f in (rec or {}).get("findings", []) if f.get("outcome") == "fail"],
-                promotion=meta.get("promotion")))
+                promotion=meta.get("promotion"), assessment=summ, external=(rec or {}).get("external") or [],
+                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json"))))
     paused = {}
     for p in files:
         m = re.match(rf"{re.escape(prefix)}([^/]+)/paused.yaml$", p)
@@ -249,4 +260,17 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
         promotions.append(promotion_of(d, m.group(1)))
     return State(head=head, cluster=y(f"clusters/{cluster}/cicd-cluster.yaml") or {}, tenants=tenants,
                  envs=envs, promotions=promotions, configs=configs, paused=paused,
-                 limits=y("tenants/_limits.yaml") or {}, fetched=time.time())
+                 limits=y("tenants/_limits.yaml") or {}, fetched=time.time(),
+                 files={k: v for k, v in files.items() if k.startswith(prefix)})
+
+
+def sbom_packages(raw: bytes | None) -> list[dict]:
+    if not raw:
+        return []
+    out = []
+    for c in json.loads(raw).get("components") or []:
+        purl = c.get("purl") or ""
+        eco = purl[4:].split("/", 1)[0] if purl.startswith("pkg:") else ""
+        if c.get("name") and c.get("version"):
+            out.append({"name": c["name"], "version": c["version"], "purl": purl, "ecosystem": eco})
+    return out

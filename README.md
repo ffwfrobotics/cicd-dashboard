@@ -65,10 +65,16 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 **Sessions** live in memory: after the dashboard scales to zero, the next page signs you in again with one redirect and no password.
 
-## Next
-- **Step 3:** OSCAL self-assessment per commit.
-- **Step 4:** imported findings become failing tests.
-- **Step 5:** advisories trigger selective re-scans.
-- **Step 6:** release packages for IT Security.
+## Steps 3 to 6: the owner's evidence for IT Security
 
-MIT licensed.
+These read the owner's compliance repo, [`ffwf/cicd-compliance`](https://forge.goblincorps.com/ffwf/cicd-compliance) (`COMPLIANCE_REPO`). It may be private, so it is read **as the signed-in person**: whoever can't see it on the forge doesn't see IT Security's findings here either. Every change is a commit or pull request by that person. The platform side is cicd-ref-arch [docs/oscal.md](https://forge.goblincorps.com/ffwf/cicd-ref-arch/src/branch/master/docs/oscal.md).
+
+| Page | Step | Shows and does |
+|---|---|---|
+| `/a/<app>/controls` | 3 | Each environment's OSCAL self-assessment, per NIST SP 800-53A objective: satisfied or not, automated or manual, which layer said so, and the evidence on hover. Links to the OSCAL assessment results, SSP and SBOM (`/api/apps/<app>/envs/<env>/<doc>`). The commit page's **Assessed** stage summarises it. |
+| `/a/<app>/findings` | 4 | IT Security's findings as tests per environment. **Import** a Tenable CSV (`examples/it-security-scan-demo.csv`); each row gets a check (package, missing header, or manual). **Accept risk** (reason and expiry: a claim for the assessor) or **close**. The commit page's **Review** stage summarises them. |
+| `/advisories` | 5 | Announce a vulnerability (package and affected range), or pick one from OSV, which is asked about the live SBOMs' packages. It shows which live environments the advisory hits; only those are re-scanned. |
+| `/a/<app>/releases` | 6 | Prepare a package of chosen environments' records, unaltered with sha256s, as a pull request. **Release** by merging it, as a second person with merge rights (or a named approver: `apps/<app>/app.yaml` `release:`). |
+
+Changes to the compliance repo make the platform re-assess what they affect within minutes, without a rebuild.
+
