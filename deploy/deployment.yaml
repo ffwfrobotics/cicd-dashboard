@@ -14,6 +14,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        fsGroup: 65532          # so the mounted Secret (0440) is readable
         seccompProfile: {type: RuntimeDefault}
       containers:
       - name: dashboard
@@ -23,9 +24,6 @@ spec:
         - {name: FORGE_URL, value: "https://forge.goblincorps.com"}
         - {name: STATE_REPO, value: "ffwf/cicd-ref-arch"}
         - {name: CLUSTER, value: "c-local"}
-        # the forge OAuth2 client and session key; created out of band in dev and prod only, so
-        # branch environments run read-only (their hosts aren't registered redirect URIs anyway)
-        envFrom: [{secretRef: {name: dashboard-oauth, optional: true}}]
         readinessProbe:
           httpGet: {path: /healthz, port: http}
           periodSeconds: 1
@@ -40,5 +38,12 @@ spec:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities: {drop: [ALL]}
-        volumeMounts: [{name: tmp, mountPath: /tmp}]
-      volumes: [{name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}]
+        volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+        - {name: oauth, mountPath: /var/run/secrets/dashboard-oauth, readOnly: true}
+      volumes:
+      - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      # the forge OAuth2 client and session key, as files (not env vars); created out of band in
+      # dev and prod only, so branch environments run read-only (their hosts aren't registered
+      # redirect URIs anyway)
+      - {name: oauth, secret: {secretName: dashboard-oauth, optional: true, defaultMode: 0440}}

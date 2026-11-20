@@ -53,7 +53,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 **Sign-in.** Sign-in is through the forge's OAuth2 app: authorization code with PKCE S256. The forge itself signs people in through Keycloak (FFwF SSO). Every action is a Forgejo API call with your own token, so the forge records it as you.
 
-**Configuration.** The client comes from Secret `dashboard-oauth`, which exists only in `dashboard-dev` and `dashboard` (prod) and is created by hand, never through git. It holds `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_ISSUER` and `SESSION_KEY`. The registered redirect URIs are `https://dashboard[-dev].c-local.k.ffwf.net/auth/callback`, so use the https URL. Branch environments have no Secret and stay read-only.
+**Configuration.** The client comes from Secret `dashboard-oauth`, which exists only in `dashboard-dev` and `dashboard` (prod) and is created by hand, never through git. It holds `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_ISSUER` and `SESSION_KEY`. It is mounted as files under `/var/run/secrets/dashboard-oauth` (not environment variables); a local run reads the same names from the environment. The registered redirect URIs are `https://dashboard[-dev].c-local.k.ffwf.net/auth/callback`, so use the https URL. Branch environments have no Secret and stay read-only.
 
 | Action | Who | How |
 |---|---|---|

@@ -15,15 +15,27 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+SECRET_DIR = Path(os.environ.get("OAUTH_SECRET_DIR", "/var/run/secrets/dashboard-oauth"))
+
+
+def setting(name: str) -> str:
+    """From the environment (local runs), else from the mounted Secret's file of that name."""
+    v = os.environ.get(name, "")
+    if not v and (SECRET_DIR / name).is_file():
+        v = (SECRET_DIR / name).read_text()
+    return v.strip()
+
+
 FORGE = os.environ.get("FORGE_URL", "https://forge.goblincorps.com").rstrip("/")
-CLIENT_ID = os.environ.get("OAUTH_CLIENT_ID", "").strip()
-CLIENT_SECRET = os.environ.get("OAUTH_CLIENT_SECRET", "").strip()
-SESSION_KEY = (os.environ.get("SESSION_KEY", "") or secrets.token_urlsafe(32)).encode()
+CLIENT_ID = setting("OAUTH_CLIENT_ID")
+CLIENT_SECRET = setting("OAUTH_CLIENT_SECRET")
+SESSION_KEY = (setting("SESSION_KEY") or secrets.token_urlsafe(32)).encode()
 SCOPES = os.environ.get("OAUTH_SCOPES", "openid profile email read:user write:repository write:issue")
 COOKIE = "cicd_dash"
 ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
