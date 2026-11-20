@@ -10,7 +10,8 @@ import re
 from dataclasses import dataclass, field
 
 from .destiny import Facts, Stage, destiny, overall
-from .sources import Env, Forgejo, State, StateRepo
+from . import platform
+from .sources import STATE_REPO, Env, Forgejo, State, StateRepo
 
 LABEL_MAX = 63
 
@@ -118,8 +119,19 @@ class Model:
         return out
 
     # ------------------------------------------------------------ commits
-    def _jobs(self, repo: str) -> dict[str, dict[str, dict]]:
-        """head_sha -> job name -> its latest task."""
+    def _jobs(self, repo: str, app: str | None = None) -> dict[str, dict[str, dict]]:
+        """head_sha -> job name -> its latest task: the platform pipeline's runs for the app, and
+        (for history, and apps that still carry their own) the app repo's own pipeline."""
+        out = self._repo_jobs(repo)
+        if app and repo != STATE_REPO:
+            for sha, jobs in platform.pipeline_jobs(self.forge, app).items():
+                mine = out.setdefault(sha, {})
+                for name, t in jobs.items():
+                    if name not in mine or t["id"] > mine[name]["id"]:
+                        mine[name] = t
+        return out
+
+    def _repo_jobs(self, repo: str) -> dict[str, dict[str, dict]]:
         data = self.forge.get(f"/repos/{repo}/actions/tasks?limit=50") or {}
         out: dict[str, dict[str, dict]] = {}
         for t in sorted(data.get("workflow_runs", []), key=lambda t: t["id"]):
@@ -137,7 +149,7 @@ class Model:
         when = (c.get("author") or {}).get("date") or c.get("timestamp", "")
         f = Facts(sha=sha, branch=branch, dev_branch=app.dev_branch, author=author, when=when,
                   message=c.get("message", "").splitlines()[0] if c.get("message") else "",
-                  jobs=(jobs if jobs is not None else self._jobs(repo)).get(sha, {}),
+                  jobs=(jobs if jobs is not None else self._jobs(repo, app.name)).get(sha, {}),
                   branch_excluded=bool(branch) and branch != app.dev_branch
                   and any(fnmatch.fnmatch(branch, p) for p in app.exclude))
         f.jobs = {k: {"status": v["status"], "url": v.get("url")} for k, v in f.jobs.items()}
@@ -190,7 +202,7 @@ class Model:
         deploys = self.state_repo.deploys(app.name)
         rows = []
         for repo in app.repos:
-            jobs = self._jobs(repo)
+            jobs = self._jobs(repo, app.name)
             for b in self.forge.get(f"/repos/{repo}/branches?limit=50") or []:
                 env_dir = "dev" if b["name"] == app.dev_branch else f"branch-{branch_slug(app.name, b['name'])}"
                 head = self.commit_row(app, repo, b["commit"], b["name"], jobs, deploys)
@@ -204,7 +216,7 @@ class Model:
         branch = branch or app.dev_branch
         repo = app.repos[0]
         commits = self.forge.get(f"/repos/{repo}/commits?sha={branch}&limit={limit}&stat=false&files=false&verification=false") or []
-        jobs, deploys = self._jobs(repo), self.state_repo.deploys(app.name)
+        jobs, deploys = self._jobs(repo, app.name), self.state_repo.deploys(app.name)
         return [self.commit_row(app, repo, c, branch, jobs, deploys) for c in commits]
 
     # ------------------------------------------------------------ controls (OSCAL self-assessment)

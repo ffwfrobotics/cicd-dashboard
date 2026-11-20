@@ -41,9 +41,13 @@ spec:
         volumeMounts:
         - {name: tmp, mountPath: /tmp}
         - {name: oauth, mountPath: /var/run/secrets/dashboard-oauth, readOnly: true}
+        - {name: platform, mountPath: /var/run/secrets/dashboard-platform, readOnly: true}
       volumes:
       - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
       # the forge OAuth2 client and session key, as files (not env vars); created out of band in
       # dev and prod only, so branch environments run read-only (their hosts aren't registered
       # redirect URIs anyway)
       - {name: oauth, secret: {secretName: dashboard-oauth, optional: true, defaultMode: 0440}}
+      # the platform token (dispatches cicd-ref-arch's pipeline: webhooks, self-service) and the
+      # forge webhook's secret, files `token` and `hook-secret`; out of band, dev and prod only
+      - {name: platform, secret: {secretName: dashboard-platform, optional: true, defaultMode: 0440}}

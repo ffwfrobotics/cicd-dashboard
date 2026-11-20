@@ -23,14 +23,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from . import auth
+from . import auth, platform
 from . import compliance as comp
 from .destiny import PROD_SIDE, STAGES, phases
 from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -453,11 +453,21 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
                 return back(url, f"{action} isn't available for apps inside the platform repo")
             r = c.post(f"/repos/{repo}/actions/workflows/request-promotion.yaml/dispatches",
                        json={"ref": "master", "inputs": {"app": name, "from": "dev", "not_before": not_before, "reason": reason}})
-        else:
+        elif model.forge.get(f"/repos/{repo}/contents/.forgejo/workflows/cicd.yaml", ttl=60) is not None:
+            # an app that still carries its own pipeline
             r = c.post(f"/repos/{repo}/actions/workflows/cicd.yaml/dispatches",
                        json={"ref": a.dev_branch, "inputs": {"action": action, "branch": branch,
                                                              "not_before": not_before, "reason": reason}})
-    if r.status_code not in (200, 201, 204):
+        else:
+            # the platform pipeline: the dashboard checks write on the app repo, and names the user
+            if not can_write(user, a):
+                return back(url, f"{action} needs write on {repo}")
+            ok, msg = platform.dispatch({"app": name, "branch": branch or a.dev_branch, "action": action,
+                                         "actor": user.login, "not_before": not_before, "reason": reason})
+            if not ok:
+                return back(url, f"{action} was not started: {msg}")
+            r = None
+    if r is not None and r.status_code not in (200, 201, 204):
         return back(url, f"{action} was not started: {forge_error(r)}")
     return back(url, {"request-promotion": "Promotion requested.", "pause": f"Pausing {branch}.",
                       "resume": f"Resumed {branch}.", "remove-env": f"Removing the environment of {branch}."}[action])
@@ -495,6 +505,26 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
     return back(url, "Approved." if verb == "approve" else "Merged. Applied when due.")
 
 
+# ---------------------------------------------------------------- the forge's webhook
+
+
+@app.post("/hooks/forge")
+async def forge_hook(request: Request):
+    """Pushes to enrolled repos: dispatch the platform pipeline (the environments workflow also
+    catches any push this misses, within 5 minutes). Signed with the shared webhook secret."""
+    body = await request.body()
+    sig = request.headers.get("X-Forgejo-Signature") or request.headers.get("X-Gitea-Signature") or ""
+    if not platform.signature_ok(body, sig):
+        raise HTTPException(403, "bad signature")
+    event = request.headers.get("X-Forgejo-Event") or request.headers.get("X-Gitea-Event") or ""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(400, "not JSON")
+    done = await asyncio.to_thread(platform.on_push, model.forge, event, payload)
+    return {"dispatched": done}
+
+
 # ---------------------------------------------------------------- live updates
 
 
@@ -503,6 +533,9 @@ def fingerprint() -> str:
     h = hashlib.sha1(model.state_repo.head().encode())
     for pr in model.forge.get(f"/repos/{STATE_REPO}/pulls?state=all&limit=20", ttl=4) or []:   # promotions and approvals
         h.update(f"{pr['number']}:{pr['state']}:{pr.get('updated_at')}".encode())
+    runs = model.forge.get(f"/repos/{STATE_REPO}/actions/tasks?limit=30", ttl=4) or {}
+    for t in runs.get("workflow_runs", []):     # the platform pipeline's jobs
+        h.update(f"{t['id']}:{t['status']}".encode())
     for a in model.apps():
         for repo in a.repos:
             tasks = model.forge.get(f"/repos/{repo}/actions/tasks?limit=20", ttl=4) or {}
