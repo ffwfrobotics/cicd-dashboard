@@ -90,9 +90,26 @@ def on_push(forge: Forgejo, event: str, payload: dict) -> list[str]:
             ok, _ = environments(forge)
             done.append(f"{name}: {branch} deleted" + ("" if ok else " (cleanup within 5 minutes)"))
             continue
+        if already_run(forge, name, sha):   # a redelivery or test delivery: don't rebuild what built or is building
+            done.append(f"{name}: {branch} {sha[:7]} already run")
+            continue
         ok, msg = dispatch({"app": name, "branch": branch, "sha": sha, "action": "deploy", "actor": who})
         done.append(f"{name}: {branch} {sha[:7]}" + ("" if ok else f" not started: {msg}"))
     return done
+
+
+def already_run(forge: Forgejo, app: str, sha: str) -> bool:
+    """A recent pipeline run for this app commit that hasn't failed (a failed one may be retried)."""
+    runs = (forge.get(f"/repos/{STATE_REPO}/actions/runs?workflow_id={WORKFLOW}&limit=50", ttl=0) or {}).get("workflow_runs") or []
+    for r in runs:
+        try:
+            inp = json.loads(r.get("event_payload") or "{}").get("inputs") or {}
+        except ValueError:
+            continue
+        if inp.get("app") == app and inp.get("sha") == sha and (inp.get("action") or "deploy") == "deploy" \
+                and r.get("status") not in ("failure", "cancelled"):
+            return True
+    return False
 
 
 def environments(forge: Forgejo) -> tuple[bool, str]:

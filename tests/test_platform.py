@@ -51,6 +51,18 @@ class Hook(unittest.TestCase):
         self.assertEqual(sent, [{"app": "demo", "branch": "feat", "sha": "b" * 40, "action": "deploy", "actor": "ada"}])
         self.assertEqual(len(done), 1)
 
+    def test_a_redelivery_of_a_built_commit_is_not_rebuilt_but_a_failed_one_is(self):
+        def runs(status):
+            return dict(TENANTS, **{"/repos/ffwf/cicd-ref-arch/actions/runs": {"workflow_runs": [
+                {"status": status, "event_payload": json.dumps({"inputs": {"app": "demo", "sha": "b" * 40}})}]}})
+        push = {"ref": "refs/heads/main", "after": "b" * 40, "repository": {"full_name": "o/demo-app"}}
+        sent = []
+        with mock.patch.object(platform, "dispatch", lambda inputs: (sent.append(inputs), (True, ""))[1]):
+            platform.on_push(FakeForge(runs("success")), "push", push)
+            self.assertEqual(sent, [])
+            platform.on_push(FakeForge(runs("failure")), "push", push)
+            self.assertEqual(len(sent), 1)
+
     def test_other_repos_and_tags_are_ignored(self):
         with mock.patch.object(platform, "dispatch", side_effect=AssertionError):
             self.assertEqual(platform.on_push(FakeForge(TENANTS), "push", {"ref": "refs/heads/x", "after": "b" * 40,
