@@ -16,7 +16,7 @@
     <div class="bar" title="{{ s.counts.satisfied }} satisfied · {{ bad }} not satisfied · {{ unc }} uncovered">
       <span class="s-ok" style="flex:{{ s.counts.satisfied }}"></span>{% if bad > 0 %}<span class="s-fail" style="flex:{{ bad }}"></span>{% endif %}{% if unc %}<span class="s-todo" style="flex:{{ unc }}"></span>{% endif %}
     </div>
-    <div class="muted small">{% for k, v in s.coverage | dictsort %}{{ v }} {{ k }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+    <div class="chips">{% for k, tip in [('automated', 'All evidence comes from pipeline records'), ('manual', 'Some evidence is an attestation'), ('not-applicable', 'Declared not applicable, with a reason'), ('uncovered', 'No statement or evidence yet')] %}{% if s.coverage.get(k) %}<span class="pill count {{ 's-warn' if k == 'uncovered' else 'plain' }}" title="{{ tip }}">{{ k | replace('-', ' ') | capitalize }}<b>{{ s.coverage[k] }}</b></span>{% endif %}{% endfor %}</div>
     <div class="muted small"><a href="/a/{{ a.name }}/c/{{ s.commit }}"><code>{{ s.commit[:7] }}</code></a> · {{ s.generated | ts }}</div>
     <div class="small" title="OSCAL 1.2.3 JSON">{% for doc, label in [('assessment-results', 'Assessment'), ('ssp', 'SSP'), ('sbom', 'SBOM')] %}<a href="/api/apps/{{ a.name }}/envs/{{ e.dir }}/{{ doc }}">{{ label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>
   </div>

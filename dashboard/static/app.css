@@ -44,6 +44,8 @@ h2 .aside { margin-left: auto; font-weight: 400; font-size: .85rem; color: var(-
 .pill { display: inline-flex; align-items: center; gap: .3rem; padding: 0 .5rem; border-radius: 999px; font-size: .78rem; line-height: 1.5; white-space: nowrap;
         border: 1px solid color-mix(in srgb, currentColor 35%, transparent); background: color-mix(in srgb, currentColor 9%, transparent); }
 .pill.plain { color: var(--muted); }
+.pill.count { padding-right: 0; gap: .4rem; overflow: hidden; }
+.pill.count b { font-weight: 600; padding: 0 .5rem 0 .4rem; background: color-mix(in srgb, currentColor 16%, transparent); font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; color: var(--muted); font-size: .8rem; margin-top: .8rem; }
 .legend span { display: inline-flex; align-items: center; gap: .3rem; }
 
