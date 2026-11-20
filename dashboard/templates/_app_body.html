@@ -6,7 +6,7 @@
     <h3>{{ e.dir }}{% if e.kind == 'prod' %} <span class="pill plain">prod</span>{% endif %}</h3>
     {% for h in e.hosts %}<div><a href="https://{{ h }}/">{{ h }}</a></div>{% endfor %}
     <div class="muted small"><a href="/a/{{ a.name }}/c/{{ e.commit }}{% if e.branch %}?branch={{ e.branch }}{% endif %}"><code>{{ (e.commit or '')[:7] }}</code></a>{% if e.branch %} · <code>{{ e.branch }}</code>{% endif %} · {{ e.rendered_at | ts }}</div>
-    <div class="chips">{{ gate(e.security) }}{{ score(a, e) }}{% if e.failing %}<span class="pill s-warn" title="{{ e.failing | map(attribute='rule') | join(', ') }}">{{ e.failing | length }} finding{{ 's' if e.failing | length != 1 }}</span>{% endif %}</div>
+    <div class="chips">{% set rt = (runtimes or {}).get(e.dir) %}{% if rt %}<span class="pill s-{{ {'success': 'ok', 'warning': 'warn', 'failure': 'fail'}.get(rt.state, 'todo') }}" title="{{ rt.summary }}">{{ rt.summary | runtime_word }}</span>{% endif %}{{ gate(e.security) }}{{ score(a, e) }}{% if e.failing %}<span class="pill s-warn" title="{{ e.failing | map(attribute='rule') | join(', ') }}">{{ e.failing | length }} finding{{ 's' if e.failing | length != 1 }}</span>{% endif %}</div>
   </div>
 {% endfor %}
 </div>

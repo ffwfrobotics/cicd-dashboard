@@ -26,12 +26,12 @@ from markupsafe import Markup, escape
 from . import auth, platform
 from . import enroll as enrolling
 from . import compliance as comp
-from .destiny import PROD_SIDE, STAGES, phases
+from .destiny import PROD_SIDE, STAGES, phases, runtime_word
 from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -53,6 +53,7 @@ def ts(value) -> Markup:
 
 
 templates.env.filters["ts"] = ts
+templates.env.filters["runtime_word"] = runtime_word
 templates.env.globals.update(STATE_REPO=STATE_REPO, phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
                              COMMIT=os.environ.get("APP_COMMIT", "dev"), FORGE=os.environ.get("FORGE_URL", "https://forge.goblincorps.com"))
 model = Model()
@@ -125,13 +126,15 @@ def index(request: Request):
 @app.get("/a/{name}", response_class=HTMLResponse)
 def app_page(request: Request, name: str):
     a = app_or_404(name)
-    return page(request, "app.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant))
+    return page(request, "app.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
+                runtimes=model.env_runtimes(a))
 
 
 @app.get("/a/{name}/fragment/body", response_class=HTMLResponse)
 def app_body(request: Request, name: str):
     a = app_or_404(name)
-    return page(request, "_app_body.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant))
+    return page(request, "_app_body.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
+                runtimes=model.env_runtimes(a))
 
 
 @app.get("/a/{name}/c/{sha}", response_class=HTMLResponse)

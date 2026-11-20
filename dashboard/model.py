@@ -161,6 +161,19 @@ class Model:
         x = max(mine, key=lambda x: x["id"])
         return {"state": x.get("status") or x.get("state"), "summary": x.get("description", ""), "url": x.get("target_url")}
 
+    def env_runtimes(self, app: AppInfo) -> dict[str, dict]:
+        """env dir -> the runtime check's status on the commit it runs (not prod: promotions aren't checked)."""
+        repo = app.repos[0] if app.repos else STATE_REPO
+        if repo == STATE_REPO:
+            return {}
+        out = {}
+        for e in app.envs:
+            if e.commit and e.kind != "prod":
+                r = self.runtime(repo, e.commit)
+                if r:
+                    out[e.dir] = r
+        return out
+
     def contract(self, repo: str, sha: str) -> dict | None:
         """The intake step's commit statuses (cicd/contract, cicd/contract/<check>), latest of each."""
         latest: dict[str, dict] = {}
