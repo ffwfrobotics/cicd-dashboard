@@ -48,7 +48,33 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | Light or dark | Follows the browser; the header button switches between auto, light and dark and remembers it |
 | Icons | `dashboard/static/icons.svg`, drawn in the theme's status colours |
 
-Layout is in `dashboard/static/app.css`, which only uses the theme's variables.
+Layout is in `dashboard/static/app.css`, which only uses the theme's variables. The design rules for pages and copy are in [docs/design.md](docs/design.md).
+
+### Branding it for your organisation
+
+1. Copy `dashboard/static/theme.css` and change the values. Keep every variable: the layout uses them all.
+   ```css
+   :root {
+     --brand-logo: url("data:image/svg+xml;base64,...");
+     --brand-logo-width: 6rem;
+     --accent: light-dark(#7a1f5c, #e58cc5);
+     --font: "Inter", system-ui, sans-serif;
+   }
+   ```
+2. Either replace the file in your fork, or keep the image as it is and mount yours:
+   ```yaml
+   # deploy/: a ConfigMap holding your theme.css, mounted read-only
+   env:
+   - {name: DASHBOARD_BRAND, value: "Acme Delivery"}
+   - {name: DASHBOARD_THEME, value: /etc/dashboard/theme.css}
+   volumeMounts:
+   - {name: theme, mountPath: /etc/dashboard, readOnly: true}
+   volumes:
+   - {name: theme, configMap: {name: dashboard-theme}}
+   ```
+3. Check both modes with the header's theme button. Status colours (`--ok`, `--warn`, `--fail`) need to stay readable on `--bg` and `--surface` in each.
+
+The theme is served at `/theme.css` and cached for five minutes.
 
 ## Step 2: sign in and act as yourself
 
