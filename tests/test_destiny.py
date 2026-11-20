@@ -132,3 +132,7 @@ class Phases(unittest.TestCase):
         p = self.ph(f)
         self.assertEqual((p["develop"].state, p["assess"].state), ("ok", "warn"))
         self.assertEqual(p["release"].blockers, [{"category": "vuln", "rules": ["GHSA-x"]}])
+
+    def test_unpromotable_commit_skips_release_quietly(self):
+        p = self.ph(facts(branch="feat", deploy=LIVE, security={"status": "pass"}))
+        self.assertEqual((p["release"].state, p["release"].detail), ("skip", ""))

@@ -274,7 +274,10 @@ def phases(stages: list[Stage]) -> list[Phase]:
         states = {s.state for s in ss}
         state = next((x for x in ("fail", "run", "warn") if x in states), None)
         if not state:
-            state = "ok" if "ok" in states else "todo" if "todo" in states else "skip"
+            state = "ok" if "ok" in states else "skip" if ss[0].state == "skip" else "todo" if "todo" in states else "skip"
+        if state in ("todo", "skip"):     # nothing has happened yet, or it won't (e.g. a superseded commit can't be promoted)
+            out.append(Phase(key, label, role, ss, state, "", [b for s in ss for b in s.blockers]))
+            continue
         # the deciding stage: the first one in that state, or (when done) the last one with something to say
         pick = [s for s in ss if s.state == state] if state != "ok" else [s for s in reversed(ss) if s.detail and s.state == "ok"]
         deciding = pick[0] if pick else None
