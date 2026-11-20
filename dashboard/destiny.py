@@ -9,6 +9,7 @@ the first prod-side stage not yet passed carries what would block there (`blocke
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 
 STAGES = [
@@ -16,7 +17,7 @@ STAGES = [
     ("contract", "Contract"),
     ("tests", "Tests"),
     ("build", "Build"),
-    ("deployed", "Deployed"),
+    ("deployed", "Running"),   # deployed, and the runtime check after it (cicd/runtime)
     ("security", "Security"),
     ("assessed", "Assessed"),
     ("review", "Findings"),
@@ -66,6 +67,7 @@ class Facts:
     not_in_cicd_why: str = ""
     assessment: dict | None = None    # the commit's OSCAL self-assessment (summary)
     contract: dict | None = None      # intake's commit statuses: {state, summary, url, items: [{check, state, description}]}
+    runtime: dict | None = None       # the runtime check's commit status (cicd/runtime): {state, summary, url}
     external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
 
@@ -77,6 +79,11 @@ def job_state(task: dict | None) -> str | None:
     if s in RUNNING:
         return "run"
     return {"success": "ok", "failure": "fail", "cancelled": "fail", "skipped": "skip"}.get(s, "todo")
+
+
+def runtime_word(summary: str) -> str:
+    """The class word that starts the cicd/runtime description ("crash (app: exits 3). It exits...")."""
+    return re.split(r" \(|: |\. ", summary, maxsplit=1)[0]
 
 
 def destiny(f: Facts) -> list[Stage]:
@@ -139,6 +146,15 @@ def destiny(f: Facts) -> list[Stage]:
             hosts = f.deploy.get("hosts") or []
             dep.detail = hosts[0] if hosts else f.deploy["env_dir"]
             dep.href = f"https://{hosts[0]}/" if hosts else None
+            rt, rs = f.runtime, job_state(f.jobs.get("runtime"))
+            if rt:   # what the runtime check saw: one word, the hint in the hover, the run behind it
+                dep.state = {"success": "ok", "warning": "warn", "failure": "fail"}.get(rt["state"], "todo")
+                dep.detail = runtime_word(rt["summary"])
+                dep.tip = rt["summary"] + (f"\n{hosts[0]}" if hosts else "")
+                if dep.state != "ok":
+                    dep.href = rt.get("url") or dep.href
+            elif rs == "run":
+                dep.state, dep.detail = "run", "checking"
         else:
             dep.state = "ok"
             dep.detail = "superseded" + (f" by {f.deploy['superseded_by'][:7]}" if f.deploy.get("superseded_by") else "")

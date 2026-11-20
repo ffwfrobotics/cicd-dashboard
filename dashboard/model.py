@@ -153,6 +153,14 @@ class Model:
             jobs[t["name"]] = t
         return out
 
+    def runtime(self, repo: str, sha: str) -> dict | None:
+        """The runtime check's commit status (cicd/runtime), the latest."""
+        mine = [x for x in self.forge.get(f"/repos/{repo}/statuses/{sha}?limit=50", ttl=30) or [] if x.get("context") == "cicd/runtime"]
+        if not mine:
+            return None
+        x = max(mine, key=lambda x: x["id"])
+        return {"state": x.get("status") or x.get("state"), "summary": x.get("description", ""), "url": x.get("target_url")}
+
     def contract(self, repo: str, sha: str) -> dict | None:
         """The intake step's commit statuses (cicd/contract, cicd/contract/<check>), latest of each."""
         latest: dict[str, dict] = {}
@@ -181,6 +189,7 @@ class Model:
         f.jobs = {k: {"status": v["status"], "url": v.get("url")} for k, v in f.jobs.items()}
         if repo != STATE_REPO:
             f.contract = self.contract(repo, sha)
+            f.runtime = self.runtime(repo, sha)
         st = self.state()
         if branch and branch != app.dev_env_branch:
             if branch in st.paused.get(app.name, {}):

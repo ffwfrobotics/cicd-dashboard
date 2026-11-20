@@ -15,7 +15,7 @@ It is the owner's side. The CSPD app, which runs assessments, is its counterpart
 |---|---|
 | `/` | Tenants and their applications, with what dev and prod run |
 | `/a/<app>` | Environments (URLs, commit, security gate), branches with their pipeline, recent commits on the dev branch |
-| `/a/<app>/c/<sha>` | One commit's pipeline: Committed › Tests › Build › Security › Deployed › Assessed › Findings › Promotion › Approved › Scheduled › Prod. Findings that would block prod, and who requested and approved a promotion. |
+| `/a/<app>/c/<sha>` | One commit's pipeline: Committed › Contract › Tests › Build › Security › Running › Assessed › Findings › Promotion › Approved › Scheduled › Prod. Findings that would block prod, and who requested and approved a promotion. |
 | `/api/...` | The same data as JSON, for agents (`/api/docs`) |
 
 Each stage has one of six states, with the same icon and colour everywhere: done, warning, failed, running, pending, skipped. A finding that is only a warning in dev shows as a badge on the first prod-side stage it would block.
@@ -98,6 +98,8 @@ Both use Secret `dashboard-platform` (dev and prod only, created by hand), mount
 | Approve, or approve by merging, a promotion | anyone but its requester and the PR's author | A review or merge on the state repo's PR, as you. The dashboard won't offer it to the requester, and says why. |
 
 **Contract.** Each commit's first Develop step is the platform's contract check: commit statuses `cicd/contract*` on the app repo, with a hint for each rule that doesn't hold. "Nothing to run" (no Dockerfile) stops the commit there.
+
+**Running.** The last Develop step is the runtime check after the deploy: the commit status `cicd/runtime`, one word (running, crash, image pull, out of memory, not ready, localhost only, …) with the hint in the hover. When it isn't running, the step links to the run, which shows the last log lines.
 
 **Tenant limit.** At most 16 branch environments per tenant are in CI/CD at a time; set in cicd-ref-arch `tenants/_limits.yaml`. A branch over the limit, or a paused one, isn't tested, built or deployed, and the dashboard says why.
 

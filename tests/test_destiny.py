@@ -156,3 +156,24 @@ class Contract(unittest.TestCase):
     def test_runs_before_the_check_existed(self):
         self.assertEqual(states(facts(jobs={"route": {"status": "success"}}))["contract"], "skip")
         self.assertEqual(states(facts())["contract"], "todo")
+
+
+class Runtime(unittest.TestCase):
+    def st(self, **kw):
+        return {x.key: x for x in destiny(facts(deploy=LIVE, **kw))}["deployed"]
+
+    def test_running(self):
+        d = self.st(runtime={"state": "success", "summary": "running: answers 200", "url": "u"})
+        self.assertEqual((d.state, d.detail, d.label), ("ok", "running", "Running"))
+
+    def test_crash_names_the_class_and_links_the_run(self):
+        d = self.st(runtime={"state": "failure", "summary": "crash (app: exits 3). It exits on start", "url": "run"})
+        self.assertEqual((d.state, d.detail, d.href), ("fail", "crash", "run"))
+        self.assertEqual(self.st(runtime={"state": "failure", "summary": "image pull (app: x). Use", "url": "r"}).detail, "image pull")
+
+    def test_checking_while_the_job_runs(self):
+        d = self.st(jobs={"test": {"status": "success"}, "deliver": {"status": "success"}, "runtime": {"status": "running"}})
+        self.assertEqual((d.state, d.detail), ("run", "checking"))
+
+    def test_before_the_check_existed(self):
+        self.assertEqual((self.st().state, self.st().detail), ("ok", "demo-dev.c-local.k.ffwf.net"))
