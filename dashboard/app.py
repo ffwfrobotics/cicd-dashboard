@@ -31,9 +31,10 @@ from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
+app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 BRAND = os.environ.get("DASHBOARD_BRAND", "cicd-dashboard")

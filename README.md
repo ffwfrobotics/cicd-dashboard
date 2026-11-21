@@ -103,7 +103,7 @@ Both use Secret `dashboard-platform` (dev and prod only, created by hand), mount
 
 **Tenant limit.** At most 16 branch environments per tenant are in CI/CD at a time; set in cicd-ref-arch `tenants/_limits.yaml`. A branch over the limit, or a paused one, isn't tested, built or deployed, and the dashboard says why.
 
-**Sessions** live in memory: after the dashboard scales to zero, the next page signs you in again with one redirect and no password.
+**Sessions** live in a cookie encrypted with `SESSION_KEY` (the dashboard stores nothing), so a restart, scaling to zero or a second replica keeps you signed in for 12 hours. Changing `SESSION_KEY` signs everyone out.
 
 ## Steps 3 to 6: the owner's evidence for IT Security
 
