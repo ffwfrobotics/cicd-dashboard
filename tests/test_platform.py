@@ -63,6 +63,22 @@ class Hook(unittest.TestCase):
             platform.on_push(FakeForge(runs("failure")), "push", push)
             self.assertEqual(len(sent), 1)
 
+    def test_push_to_a_source_bumps_the_wrapping_app(self):
+        tenants = dict(TENANTS, **{
+            "/repos/ffwf/cicd-ref-arch/contents/tenants": [{"type": "file", "name": "w.yaml"}],
+            "/repos/ffwf/cicd-ref-arch/raw/tenants/w.yaml":
+                b"metadata: {name: w}\nspec: {repo: ffwf-iac/w, mode: wrapped, sources: [{path: src, repo: o/w-src}]}\n"})
+        sent = []
+        with mock.patch.object(platform, "dispatch", lambda inputs: (sent.append(inputs), (True, ""))[1]):
+            platform.on_push(FakeForge(tenants), "push", {"ref": "refs/heads/main", "after": "c" * 40,
+                                                          "repository": {"full_name": "o/w-src"}, "pusher": {"login": "ada"}})
+        self.assertEqual(sent, [{"app": "w", "branch": "main", "sha": "c" * 40, "action": "bump", "source": "o/w-src", "actor": "ada"}])
+        sent.clear()
+        with mock.patch.object(platform, "dispatch", lambda inputs: (sent.append(inputs), (True, ""))[1]):   # deleted branches too
+            platform.on_push(FakeForge(tenants), "push", {"ref": "refs/heads/feat", "after": "0" * 40,
+                                                          "repository": {"full_name": "o/w-src"}})
+        self.assertEqual([(x["action"], x["sha"]) for x in sent], [("bump", "0" * 40)])
+
     def test_other_repos_and_tags_are_ignored(self):
         with mock.patch.object(platform, "dispatch", side_effect=AssertionError):
             self.assertEqual(platform.on_push(FakeForge(TENANTS), "push", {"ref": "refs/heads/x", "after": "b" * 40,

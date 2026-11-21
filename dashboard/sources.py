@@ -82,6 +82,7 @@ class Env:
     assessment: dict | None = None     # evidence/assessment-summary.json (the OSCAL self-assessment, short)
     external: list[dict] = field(default_factory=list)  # IT Security's findings as tests, this env's last gate
     packages: list[dict] = field(default_factory=list)  # from evidence/sbom.cdx.json: name, version, purl, ecosystem
+    sources: list[dict] = field(default_factory=list)   # [{path, repo, commit}]: the source commits it runs (wrapped/monorepo)
 
 
 @dataclass
@@ -255,7 +256,7 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
                 rendered_at=meta.get("renderedAt"), security=(rec or {}).get("gate"),
                 failing=[f for f in (rec or {}).get("findings", []) if f.get("outcome") == "fail"],
                 promotion=meta.get("promotion"), assessment=summ, external=(rec or {}).get("external") or [],
-                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json"))))
+                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json")), sources=meta.get("sources") or []))
     paused = {}
     for p in files:
         m = re.match(rf"{re.escape(prefix)}([^/]+)/paused.yaml$", p)

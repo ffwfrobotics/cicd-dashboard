@@ -221,7 +221,8 @@ class Model:
             live = bool(cur and cur.commit == sha)
             f.deploy = {"env": dep.env, "env_dir": env_dir, "image": dep.image, "at": dep.at, "run_url": dep.run_url,
                         "hosts": cur.hosts if cur else [], "live": live,
-                        "superseded_by": cur.commit if (cur and not live) else None}
+                        "superseded_by": cur.commit if (cur and not live) else None,
+                        "sources": cur.sources if live else []}
             if live:
                 f.security, f.failing = cur.security, cur.failing
                 f.assessment, f.external = cur.assessment, cur.external

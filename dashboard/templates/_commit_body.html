@@ -1,6 +1,7 @@
 {% from "_macros.html" import icon, blockers, sev, csrf %}
 <h1><a href="{{ FORGE }}/{{ c.repo }}/commit/{{ c.sha }}"><code>{{ c.short }}</code></a> {{ c.message }}</h1>
 <div class="muted">{{ c.author }} · {{ c.when | ts }}</div>
+{% for s in (f.deploy or {}).get('sources') or [] %}<div class="muted small" title="Source {{ s.path }}/: the code this commit builds">{{ s.path }} ← <a href="{{ FORGE }}/{{ s.repo }}/commit/{{ s.commit }}">{{ s.repo }}@<code>{{ (s.commit or '')[:7] }}</code></a></div>{% endfor %}
 
 <div class="road">
 {% for p in phases(c.stages) %}

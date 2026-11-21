@@ -95,6 +95,13 @@ def on_push(forge: Forgejo, event: str, payload: dict) -> list[str]:
             continue
         ok, msg = dispatch({"app": name, "branch": branch, "sha": sha, "action": "deploy", "actor": who})
         done.append(f"{name}: {branch} {sha[:7]}" + ("" if ok else f" not started: {msg}"))
+    # a push to an app's source (wrapped and monorepo modes, docs/enrollment.md): move its submodule
+    # in the app's IaC root; that commit is then an ordinary push there, and deploys
+    for name, spec in tenants(forge).items():
+        if repo not in [x.get("repo") for x in spec.get("sources") or []]:
+            continue
+        ok, msg = dispatch({"app": name, "branch": branch, "sha": sha, "action": "bump", "source": repo, "actor": who})
+        done.append(f"{name}: bump from {repo} {branch} {sha[:7]}" + ("" if ok else f" not started: {msg}"))
     return done
 
 
