@@ -1,4 +1,4 @@
-{% from "_macros.html" import meter, gate, score, legend, csrf %}
+{% from "_macros.html" import meter, gate, score, legend, csrf, icon %}
 {% set dev = a.env('dev') %}
 <div class="cards">
 {% for e in a.envs %}
@@ -11,7 +11,11 @@
 {% endfor %}
 </div>
 
-{% if user and can_write and dev %}
+{% if dev and promo and not promo.action and promo.state != 'skip' %}
+<h2>Promote</h2>
+<div class="panel promo"><a href="/a/{{ a.name }}/c/{{ dev.commit }}{% if dev.branch %}?branch={{ dev.branch }}{% endif %}">{{ icon(promo.state) }} <code>{{ (dev.commit or '')[:7] }}</code></a>
+  <span title="{{ promo.tip }}">{% if promo.href %}<a href="{{ promo.href }}">{{ promo.detail }}</a>{% else %}{{ promo.detail }}{% endif %}</span></div>
+{% elif user and can_write and dev %}
 <h2>Promote</h2>
 <form class="panel fields" method="post" action="/a/{{ a.name }}/act">
   <input type="hidden" name="action" value="request-promotion">{{ csrf(user) }}

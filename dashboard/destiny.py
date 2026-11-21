@@ -69,6 +69,7 @@ class Facts:
     assessment: dict | None = None    # the commit's OSCAL self-assessment (summary)
     contract: dict | None = None      # intake's commit statuses: {state, summary, url, items: [{check, state, description}]}
     runtime: dict | None = None       # the runtime check's commit status (cicd/runtime): {state, summary, url}
+    request: dict | None = None       # the latest request-promotion run for it, before its PR: {status, url, actor, at}
     external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
 
@@ -80,6 +81,13 @@ def job_state(task: dict | None) -> str | None:
     if s in RUNNING:
         return "run"
     return {"success": "ok", "failure": "fail", "cancelled": "fail", "skipped": "skip"}.get(s, "todo")
+
+
+def _when(v) -> dt.datetime:
+    try:
+        return dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
 
 
 def runtime_word(summary: str) -> str:
@@ -252,7 +260,19 @@ def destiny(f: Facts) -> list[Stage]:
     elif not f.in_prod:
         superseded = bool(f.deploy and not f.deploy.get("live"))
         st["promotion"].state = "skip" if (not on_dev or superseded) else "todo"
-        if st["promotion"].state == "todo":
+        rq = f.request if (on_dev and not superseded) else None
+        rs = rq and job_state({"status": rq["status"]})
+        if rs == "ok" and now - _when(rq.get("at")) < dt.timedelta(minutes=10):
+            rs = "run"                  # done, and its PR not read yet (the forge is read with a short cache)
+        if rs == "run":                 # dispatched; the PR comes when the run finishes
+            st["promotion"].state, st["promotion"].detail = "run", "requested"
+            st["promotion"].tip = f"Requested by {rq['actor']}: opening the promotion PR"
+            st["promotion"].href = rq.get("url")
+        elif rs == "fail":
+            st["promotion"].state, st["promotion"].detail = "fail", "request failed"
+            st["promotion"].tip = f"The request by {rq['actor']} didn't open a PR: see the run"
+            st["promotion"].href = rq.get("url")
+        if st["promotion"].state in ("todo", "fail"):
             st["promotion"].action = "request-promotion"
         st["promotion"].tip = (f"Merge to {f.dev_branch} to promote" if not on_dev
                                else "Only what dev runs now can be promoted" if superseded else "")

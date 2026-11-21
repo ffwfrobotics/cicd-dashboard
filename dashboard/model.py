@@ -232,6 +232,8 @@ class Model:
                     f.failing = [x for x in rec.get("findings", []) if x.get("outcome") == "fail"]
                     f.external = rec.get("external") or []
                 f.assessment = self.state_repo.assessment_at(dep.state_sha, app.name, env_dir)
+        if repo != STATE_REPO:
+            f.request = platform.promotion_requests(self.forge, app.name).get(sha)
         prod = app.env("prod")
         f.in_prod = bool(prod and prod.commit and prod.commit.startswith(sha[:7]) and sha.startswith(prod.commit[:7]))
         promos = [p for p in st.promotions if p.app == app.name and p.commit and p.commit == sha]

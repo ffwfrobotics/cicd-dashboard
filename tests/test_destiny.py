@@ -57,6 +57,23 @@ class Destiny(unittest.TestCase):
         self.assertEqual((s["promotion"].state, s["promotion"].action), ("todo", "request-promotion"))
         self.assertEqual([x.key for x in s.values() if x.action], ["promotion"])
 
+    def test_request_followed_from_dispatch_to_pr(self):
+        def promo(status, at="2026-11-19T19:58:00Z"):
+            rq = {"status": status, "url": "u", "actor": "ada", "at": at}
+            return {x.key: x for x in destiny(facts(deploy=LIVE, security={"status": "pass"}, request=rq))}["promotion"]
+        self.assertEqual((promo("running").state, promo("running").action), ("run", None))       # no second request
+        self.assertEqual((promo("waiting").state, promo("running").href), ("run", "u"))
+        self.assertEqual((promo("success").state, promo("success").action), ("run", None))      # PR not read yet
+        self.assertEqual((promo("success", "2026-11-19T18:00:00Z").state,
+                          promo("success", "2026-11-19T18:00:00Z").action), ("todo", "request-promotion"))
+        self.assertEqual((promo("failure").state, promo("failure").action), ("fail", "request-promotion"))   # retry
+
+    def test_a_pr_outranks_the_request_run(self):
+        p = {"id": "x", "state": "requested", "requested_by": "ada", "pr": {"number": 3, "state": "open", "url": "u"}}
+        s = {x.key: x for x in destiny(facts(deploy=LIVE, promotion=p, request={"status": "running", "actor": "ada", "at": ""}))}
+        self.assertEqual((s["promotion"].state, s["promotion"].action), ("run", None))
+        self.assertEqual(s["promotion"].detail, "#3 · ada")
+
     def test_no_request_for_branch_superseded_or_prod(self):
         d = dict(LIVE, env="branch", env_dir="branch-feat")
         for f in (facts(branch="feat", deploy=d), facts(deploy=dict(LIVE, live=False, superseded_by="c" * 40)),

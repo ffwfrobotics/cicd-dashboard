@@ -112,6 +112,22 @@ def already_run(forge: Forgejo, app: str, sha: str) -> bool:
     return False
 
 
+def promotion_requests(forge: Forgejo, app: str) -> dict[str, dict]:
+    """app commit sha -> its latest request-promotion run: {status, url, actor, at}. The run turns the
+    request into a promotion PR in a minute or two; until then this is the only sign of it."""
+    runs = (forge.get(f"/repos/{STATE_REPO}/actions/runs?workflow_id={WORKFLOW}&limit=50", ttl=4) or {}).get("workflow_runs") or []
+    out: dict[str, dict] = {}
+    for r in sorted(runs, key=lambda r: r.get("index_in_repo", 0), reverse=True):
+        try:
+            inp = json.loads(r.get("event_payload") or "{}").get("inputs") or {}
+        except ValueError:
+            continue
+        if inp.get("app") == app and inp.get("action") == "request-promotion" and inp.get("sha"):
+            out.setdefault(inp["sha"], {"status": r.get("status"), "url": r.get("html_url"), "actor": inp.get("actor", ""),
+                                        "at": r.get("created")})
+    return out
+
+
 def environments(forge: Forgejo) -> tuple[bool, str]:
     token = _secret("token")
     if not token:

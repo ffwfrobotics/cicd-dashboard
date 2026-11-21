@@ -31,7 +31,7 @@ from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.7.3"
+VERSION = "0.7.4"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -124,18 +124,25 @@ def index(request: Request):
     return page(request, "index.html", tenants=model.tenants(), state=model.state())
 
 
+def dev_promotion(a) -> tuple[str | None, object]:
+    """(the commit dev runs, its promotion stage): what a request would promote, and whether it can be requested."""
+    dev = a.env("dev")
+    got = model.commit(a, dev.commit, a.dev_branch) if dev and dev.commit else None
+    return (dev.commit if dev else None), (next((s for s in got[0].stages if s.key == "promotion"), None) if got else None)
+
+
 @app.get("/a/{name}", response_class=HTMLResponse)
 def app_page(request: Request, name: str):
     a = app_or_404(name)
     return page(request, "app.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
-                runtimes=model.env_runtimes(a))
+                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1])
 
 
 @app.get("/a/{name}/fragment/body", response_class=HTMLResponse)
 def app_body(request: Request, name: str):
     a = app_or_404(name)
     return page(request, "_app_body.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
-                runtimes=model.env_runtimes(a))
+                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1])
 
 
 @app.get("/a/{name}/c/{sha}", response_class=HTMLResponse)
@@ -482,8 +489,16 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
             # the platform pipeline: the dashboard checks write on the app repo, and names the user
             if not can_write(user, a):
                 return back(url, f"{action} needs write on {repo}")
-            ok, msg = platform.dispatch({"app": name, "branch": branch or a.dev_branch, "action": action,
-                                         "actor": user.login, "not_before": not_before, "reason": reason})
+            inputs = {"app": name, "branch": branch or a.dev_branch, "action": action,
+                      "actor": user.login, "not_before": not_before, "reason": reason}
+            if action == "request-promotion":
+                dev, promo = dev_promotion(a)
+                if promo is None:
+                    return back(url, "Nothing on dev to promote.")
+                if promo.action != action:        # requested already, in prod, or replaced on dev
+                    return back(url, f"Not requested: {dev[:7]} is {promo.detail or promo.state}.")
+                inputs["sha"] = dev               # what dev runs now, so the dashboard can follow the request
+            ok, msg = platform.dispatch(inputs)
             if not ok:
                 return back(url, f"{action} was not started: {msg}")
             r = None
