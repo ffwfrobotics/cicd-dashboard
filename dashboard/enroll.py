@@ -137,7 +137,7 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
     # 3. the push webhook
     hooks = c.get(f"/repos/{repo}/hooks")
     if not any((h.get("config") or {}).get("url") == hook_url for h in (hooks.json() if hooks.status_code == 200 else [])):
-        r = c.post(f"/repos/{repo}/hooks", json={"type": "forgejo", "active": True, "events": ["push"], "branch_filter": "*",
+        r = c.post(f"/repos/{repo}/hooks", json={"type": "forgejo", "active": True, "events": ["push", "delete"], "branch_filter": "*",
                                                    "config": {"url": hook_url, "content_type": "json", "secret": hook_secret}})
         if r.status_code not in (200, 201):
             raise _err(r, "Adding the webhook")

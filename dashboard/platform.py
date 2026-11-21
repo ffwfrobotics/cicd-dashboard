@@ -78,7 +78,11 @@ def on_push(forge: Forgejo, event: str, payload: dict) -> list[str]:
     """A forge webhook: dispatch the pipeline for each app enrolled from this repo. Returns what it did."""
     repo = (payload.get("repository") or {}).get("full_name", "")
     ref = payload.get("ref", "")
-    if event != "push" or not ref.startswith("refs/heads/"):
+    if event == "delete" and payload.get("ref_type") == "branch":
+        ref, payload = f"refs/heads/{ref}", dict(payload, after=ZERO)   # the forge reports a deleted branch as its own event
+    elif event != "push":
+        return []
+    if not ref.startswith("refs/heads/"):
         return []
     branch, sha = ref[len("refs/heads/"):], payload.get("after", "")
     who = (payload.get("pusher") or {}).get("login") or (payload.get("pusher") or {}).get("username") or ""

@@ -78,6 +78,11 @@ class Hook(unittest.TestCase):
             platform.on_push(FakeForge(tenants), "push", {"ref": "refs/heads/feat", "after": "0" * 40,
                                                           "repository": {"full_name": "o/w-src"}})
         self.assertEqual([(x["action"], x["sha"]) for x in sent], [("bump", "0" * 40)])
+        sent.clear()
+        with mock.patch.object(platform, "dispatch", lambda inputs: (sent.append(inputs), (True, ""))[1]):   # the forge's delete event
+            platform.on_push(FakeForge(tenants), "delete", {"ref": "feat", "ref_type": "branch",
+                                                            "repository": {"full_name": "o/w-src"}})
+        self.assertEqual([(x["action"], x["branch"], x["sha"]) for x in sent], [("bump", "feat", "0" * 40)])
 
     def test_other_repos_and_tags_are_ignored(self):
         with mock.patch.object(platform, "dispatch", side_effect=AssertionError):
