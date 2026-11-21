@@ -12,6 +12,7 @@ Who does what, so each step is done by someone allowed to:
 from __future__ import annotations
 
 import base64
+import posixpath
 import datetime as dt
 import re
 from urllib.parse import urlparse
@@ -81,13 +82,58 @@ def tenant_doc(name: str, owner: str, repo: str, requester: str, default_branch:
             + yaml.safe_dump(t, sort_keys=False))
 
 
+MODES = ("direct", "wrapped", "monorepo")
+
+
+def _project_dirs(tree: list[dict], prefix: str = "") -> set[str]:
+    return {prefix + x["path"].rsplit("/", 1)[0] for x in tree
+            if x.get("type") == "blob" and x["path"].rsplit("/", 1)[-1] in ("cicd.yaml", "Dockerfile") and 1 <= x["path"].count("/") <= 3}
+
+
+def projects(c: httpx.Client, repo: str) -> list[str]:
+    """A monorepo's candidate projects: folders (up to 3 deep, not the root) with a cicd.yaml or a Dockerfile,
+    in the repo and inside its submodules that live on this forge (a config repo holding the projects)."""
+    r = c.get(f"/repos/{repo}/git/trees/HEAD", params={"recursive": "true", "per_page": 10000})
+    if r.status_code != 200:
+        return []
+    tree = r.json().get("tree") or []
+    out = _project_dirs(tree)
+    gm = c.get(f"/repos/{repo}/raw/.gitmodules")
+    subs = {}
+    if gm.status_code == 200:
+        cur = {}
+        for line in gm.text.splitlines() + ["["]:
+            line = line.strip()
+            if line.startswith("["):
+                if cur.get("path") and cur.get("url"):
+                    u = cur["url"].removesuffix(".git")
+                    full = posixpath.normpath(posixpath.join("/" + repo, u)) if u.startswith(".") else "/" + "/".join(u.split("://", 1)[-1].split("/")[1:])
+                    subs[cur["path"]] = "/".join(full.strip("/").split("/")[-2:])
+                cur = {}
+            elif "=" in line:
+                k, v = (x.strip() for x in line.split("=", 1))
+                cur[k] = v
+    for path, sub in subs.items():
+        t = c.get(f"/repos/{sub}/git/trees/HEAD", params={"recursive": "true", "per_page": 10000})
+        if t.status_code == 200:
+            out |= _project_dirs(t.json().get("tree") or [], prefix=path + "/")
+    return sorted(out)
+
+
 def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: str, owner: str,
-           mirror: bool, private: bool, source_token: str, hook_url: str) -> list[str]:
-    """Do it; returns what was done. Raises EnrollError with what to fix."""
+           mirror: bool, private: bool, source_token: str, hook_url: str, mode: str = "direct",
+           update: str = "follow", paths: list[str] | None = None) -> list[str]:
+    """Do it; returns what was done. Raises EnrollError with what to fix.
+    direct: the repo is the app (the dashboard writes the record). wrapped and monorepo: the platform's
+    enroll workflow does the rest as the bot (cicd-ref-arch docs/enrollment.md), named for this user."""
+    if mode not in MODES or update not in ("follow", "pin"):
+        raise EnrollError("Mode is direct, wrapped or monorepo; updates follow or pin")
     if not platform.configured():
         raise EnrollError("The dashboard has no platform token here")
     hook_secret = platform._secret("hook-secret")
-    check_name(name, platform.tenants(forge))
+    enrolled = platform.tenants(forge)
+    for n in ([f"{name}-{p.rstrip('/').rsplit('/', 1)[-1]}" for p in paths or []] if mode == "monorepo" else [name]):
+        check_name(n, enrolled)
     done: list[str] = []
     bot = bot_client()
     bot_login = bot.get("/user").json()["login"]
@@ -142,6 +188,23 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
         if r.status_code not in (200, 201):
             raise _err(r, "Adding the webhook")
         done.append("webhook added")
+
+    # a monorepo is imported first; its projects are picked from what it holds (then enroll() runs again on it)
+    if mode == "monorepo" and not paths:
+        done.append(f"repo:{repo}")
+        return done
+
+    # 4. wrapped or monorepo: the platform's enroll workflow (the bot creates the IaC repo, writes the record)
+    if mode != "direct":
+        apps = [(name, None)] if mode == "wrapped" else [(f"{name}-{p.rstrip('/').rsplit('/', 1)[-1]}", p.rstrip("/")) for p in paths]
+        for app, path in apps:
+            inputs = {"app": app, "mode": mode, "update": update, "actor": login, "hook_url": hook_url}
+            inputs.update({"source": repo} if mode == "wrapped" else {"repo": repo, "path": path})
+            ok, msg = platform.dispatch(inputs, workflow="enroll.yaml")
+            if not ok:
+                raise EnrollError(f"Enrolling {app} was not started: {msg}")
+            done.append(f"{app}: {'wrapping in ffwf-iac/' + app if mode == 'wrapped' else 'enrolling ' + path}")
+        return done
 
     # 4. the tenant record, pending
     default_branch = info.get("default_branch") or "main"

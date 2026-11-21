@@ -28,10 +28,10 @@ from . import enroll as enrolling
 from . import compliance as comp
 from .destiny import PROD_SIDE, STAGES, phases, runtime_word
 from .model import Model
-from .sources import STATE_REPO
+from .sources import FORGE as FORGE_URL, STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -552,27 +552,37 @@ def enroll_page(request: Request):
         return RedirectResponse(f"/auth/login?next=/enroll", status_code=303) if auth.ENABLED else back("/", "Adding an app needs sign-in")
     with auth.as_user(user) as c:
         owners = enrolling.owners(c, user.login)
-    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True}
+    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True, "mode": "direct", "update": "follow"}
     return page(request, "enroll.html", owners=owners, form=form)
 
 
 @app.post("/enroll", response_class=HTMLResponse)
-def enroll_post(request: Request, source: str = Form(""), name: str = Form(""), owner: str = Form(""),
-                mirror: str = Form(""), private: str = Form(""), source_token: str = Form(""), csrf: str = Form("")):
-    """Import a repo and enroll it, pending (dashboard/enroll.py says who does each step)."""
+async def enroll_post(request: Request):
+    """Import a repo and enroll it, pending (dashboard/enroll.py says who does each step). A monorepo takes
+    two posts: the first imports it and lists its projects, the second enrolls the ones picked."""
     user = auth.require(request)
-    auth.check_csrf(user, csrf)
-    name = name.strip().lower()
+    f = await request.form()
+    auth.check_csrf(user, f.get("csrf", ""))
+    get = lambda k: (f.get(k) or "").strip()
+    name, mode, update = get("name").lower(), get("mode") or "direct", get("update") or "follow"
+    paths = [p for p in f.getlist("path") if p]
+    form = {"source": get("source"), "name": name, "owner": get("owner"), "mirror": bool(get("mirror")),
+            "private": bool(get("private")), "mode": mode, "update": update}
     with auth.as_user(user) as c:
         try:
-            done = enrolling.enroll(c, model.forge, user.login, name=name, source=source.strip(), owner=owner,
-                                    mirror=bool(mirror), private=bool(private), source_token=source_token,
-                                    hook_url=hook_url(request))
+            done = enrolling.enroll(c, model.forge, user.login, name=name, source=get("source"), owner=get("owner"),
+                                    mirror=bool(get("mirror")), private=bool(get("private")), source_token=get("source_token"),
+                                    hook_url=hook_url(request), mode=mode, update=update, paths=paths)
         except enrolling.EnrollError as e:
-            owners = enrolling.owners(c, user.login)
-            form = {"source": source, "name": name, "owner": owner, "mirror": bool(mirror), "private": bool(private)}
-            return page(request, "enroll.html", owners=owners, form=form, msg=str(e))
-    return back(f"/a/{name}", "Added: " + ", ".join(done) + ".")
+            return page(request, "enroll.html", owners=enrolling.owners(c, user.login), form=form, msg=str(e))
+        if mode == "monorepo" and not paths:
+            repo = next(d[5:] for d in done if d.startswith("repo:"))
+            form["source"] = f"{FORGE_URL}/{repo}.git"
+            return page(request, "enroll.html", owners=enrolling.owners(c, user.login), form=form,
+                        projects=enrolling.projects(c, repo), repo=repo)
+    if mode == "direct":
+        return back(f"/a/{name}", "Added: " + ", ".join(done) + ".")
+    return back("/", "Enrolling: " + "; ".join(done) + ". Each appears here, pending, in about a minute.")
 
 
 @app.post("/a/{name}/approve")

@@ -16,7 +16,17 @@
   <label class="check" title="Visible only to the owner's members"><input type="checkbox" name="private" value="1"{% if form.private %} checked{% endif %}>Private</label>
   <label title="Only for a private source: a read token there. Used once to import (kept by the forge for a mirror)">Source token
     <input name="source_token" type="password" size="24" autocomplete="off"></label>
-  <button class="primary" title="Imports, enrolls as pending and starts the first run: branch environments until an admin approves">Add</button>
+  <label title="direct: the repo builds and deploys itself (its cicd.yaml, deploy/, Dockerfile). wrapped: the platform owns how it is built and deployed, in ffwf-iac/<name>, with the repo as src/; nothing is pushed to the repo. monorepo: projects in the repo, each enrolled from its folder">Mode
+    <select name="mode">{% for m in ['direct', 'wrapped', 'monorepo'] %}<option{% if m == form.mode %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
+  <label title="wrapped and monorepo: follow commits each push to the code into the IaC repo and deploys it; pin opens a PR for each, deployed when merged">Updates
+    <select name="update">{% for u in ['follow', 'pin'] %}<option{% if u == form.update %} selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
+  {% if projects is defined %}
+  <fieldset class="projects" title="Folders of {{ repo }} with a cicd.yaml or a Dockerfile, and its submodules. Each one picked is enrolled as <name>-<folder>">
+    <legend>Projects in <code>{{ repo }}</code></legend>
+    {% for p in projects %}<label class="check"><input type="checkbox" name="path" value="{{ p }}">{{ p }}</label>{% else %}<span class="muted">None found.</span>{% endfor %}
+  </fieldset>
+  {% endif %}
+  <button class="primary" title="{{ 'Enrolls the projects picked, pending' if projects is defined else 'Imports, enrolls as pending and starts the first run: branch environments until an admin approves' }}">{{ 'Enroll' if projects is defined else 'Add' }}</button>
 </form>
 <p class="muted small" title="docs/contract.md in the platform repo: what an app provides">
   <a href="{{ FORGE }}/{{ STATE_REPO }}/src/branch/master/docs/contract.md">Contract</a> ·

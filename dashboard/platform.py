@@ -38,12 +38,12 @@ def configured() -> bool:
     return bool(_secret("token"))
 
 
-def dispatch(inputs: dict) -> tuple[bool, str]:
-    """Start the platform pipeline. (ok, message)"""
+def dispatch(inputs: dict, workflow: str = WORKFLOW) -> tuple[bool, str]:
+    """Start a platform workflow (the pipeline by default). (ok, message)"""
     token = _secret("token")
     if not token:
         return False, "the dashboard has no platform token here"
-    r = httpx.post(f"{FORGE}/api/v1/repos/{STATE_REPO}/actions/workflows/{WORKFLOW}/dispatches",
+    r = httpx.post(f"{FORGE}/api/v1/repos/{STATE_REPO}/actions/workflows/{workflow}/dispatches",
                    headers={"Authorization": f"token {token}", "Accept": "application/json"},
                    json={"ref": STATE_BRANCH, "inputs": {k: str(v) for k, v in inputs.items()}}, timeout=20)
     if r.status_code in (200, 201, 204):
@@ -79,7 +79,8 @@ def on_push(forge: Forgejo, event: str, payload: dict) -> list[str]:
     repo = (payload.get("repository") or {}).get("full_name", "")
     ref = payload.get("ref", "")
     if event == "delete" and payload.get("ref_type") == "branch":
-        ref, payload = f"refs/heads/{ref}", dict(payload, after=ZERO)   # the forge reports a deleted branch as its own event
+        # the forge reports a deleted branch as its own event; its ref may be the bare name or refs/heads/<name>
+        ref, payload = (ref if ref.startswith("refs/heads/") else f"refs/heads/{ref}"), dict(payload, after=ZERO)
     elif event != "push":
         return []
     if not ref.startswith("refs/heads/"):

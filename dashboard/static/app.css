@@ -112,3 +112,4 @@ details.pop .fields { margin-top: .5rem; }
 .toolbar { display: flex; justify-content: flex-end; gap: .5rem; margin-bottom: .6rem; }
 h1 form.inline button { font-size: .8rem; vertical-align: .2em; }
 button[aria-busy="true"] { opacity: .6; cursor: progress; }
+fieldset.projects { border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .7rem; display: flex; flex-wrap: wrap; gap: .3rem 1rem; }

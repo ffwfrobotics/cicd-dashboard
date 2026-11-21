@@ -50,3 +50,28 @@ class ContractStatuses(unittest.TestCase):
         m.forge = FakeForge(st)
         c = m.contract("o/r", "a" * 40)
         self.assertEqual((c["state"], c["summary"], [i["check"] for i in c["items"]]), ("warning", "1 to fix", ["base-pinned"]))
+
+
+class Projects(unittest.TestCase):
+    def test_folders_and_submodule_contents(self):
+        from dashboard import enroll as E
+
+        class R:
+            def __init__(self, code, data=None, text=""):
+                self.status_code, self._d, self.text = code, data, text
+
+            def json(self):
+                return self._d
+
+        trees = {
+            "/repos/f/mono/git/trees/HEAD": {"tree": [{"type": "blob", "path": "apps/a/cicd.yaml"}, {"type": "blob", "path": "apps/b/Dockerfile"},
+                                                      {"type": "blob", "path": "README.md"}, {"type": "commit", "path": "config"}]},
+            "/repos/f/fx-config/git/trees/HEAD": {"tree": [{"type": "blob", "path": "apps/c/cicd.yaml"}]},
+        }
+
+        class C:
+            def get(self, path, params=None):
+                if path.endswith("/.gitmodules"):
+                    return R(200, text='[submodule "config"]\n\tpath = config\n\turl = ../fx-config.git\n')
+                return R(200, trees[path]) if path in trees else R(404)
+        self.assertEqual(E.projects(C(), "f/mono"), ["apps/a", "apps/b", "config/apps/c"])
