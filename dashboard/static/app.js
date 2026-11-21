@@ -25,6 +25,21 @@
     c.title = on ? "Live updates" : "Reconnecting";
     c.lastElementChild.textContent = on ? "Connected" : "Offline";
   }
+  // a form that asks the forge for something takes a few seconds: show it was taken, and don't send it twice
+  document.addEventListener("submit", function (e) {
+    var f = e.target;
+    if (!f.method || f.method.toLowerCase() !== "post") return;
+    if (f.dataset.sent) { e.preventDefault(); return; }
+    f.dataset.sent = "1";
+    f.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-busy", "true"); });
+  });
+  window.addEventListener("pageshow", function (e) {    // back to a page from the cache: usable again
+    if (!e.persisted) return;
+    document.querySelectorAll("form[data-sent]").forEach(function (f) {
+      delete f.dataset.sent;
+      f.querySelectorAll("button").forEach(function (b) { b.removeAttribute("aria-busy"); });
+    });
+  });
   document.addEventListener("htmx:sseOpen", function () { conn(true); });
   document.addEventListener("htmx:sseError", function () { conn(false); });
   document.addEventListener("htmx:sseClose", function () { conn(false); });

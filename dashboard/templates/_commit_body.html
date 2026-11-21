@@ -62,10 +62,9 @@
 {% if pr and pr.state == 'open' %}
 <p>
   {% if not user %}{% if auth_enabled %}<a class="btn" href="/auth/login?next={{ request.url.path }}">Sign in to approve</a>{% endif %}
-  {% elif user.login in (p.requested_by, pr.author) %}<button disabled title="You {{ 'requested' if user.login == p.requested_by else 'opened' }} this promotion; a second person approves it">Approve</button>
-  {% else %}
-  <form class="inline" method="post" action="/promotions/{{ p.id }}/approve">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button>Approve</button></form>
-  <form class="inline" method="post" action="/promotions/{{ p.id }}/merge">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary" title="Merging approves it; it is applied when due, after a final scan">Merge</button></form>
+  {% else %}{% set own = user.login == p.requested_by %}
+  <form class="inline" method="post" action="/promotions/{{ p.id }}/approve">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button{% if own %} title="You requested it: recorded as no second person"{% endif %}>Approve</button></form>
+  <form class="inline" method="post" action="/promotions/{{ p.id }}/merge">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="{{ '' if own else 'primary' }}" title="{{ 'You requested it: applied when due, recorded as no second person' if own else 'Applied when due' }}">Merge</button></form>
   {% endif %}
 </p>
 {% endif %}

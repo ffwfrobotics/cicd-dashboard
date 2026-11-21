@@ -95,6 +95,7 @@ class Promotion:
     requested_by: str
     reason: str
     approval: str | None = None
+    separated: bool | None = None     # the platform's record: did a second person approve or merge it
     security: str | None = None
     applied_at: str | None = None
     pr: dict | None = None
@@ -229,7 +230,8 @@ def promotion_of(d: dict, state: str) -> Promotion:
     return Promotion(
         id=d["id"], app=d["app"], state=state, commit=d.get("commit"), image=d["image"],
         not_before=d.get("notBefore", ""), requested_by=d.get("requestedBy", ""), reason=d.get("reason", ""),
-        approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt"))
+        approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt"),
+        separated=(d.get("approvalRecord") or {}).get("separated"))
 
 
 def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:

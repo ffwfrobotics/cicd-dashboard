@@ -31,7 +31,7 @@ from .model import Model
 from .sources import STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.7.4"
+VERSION = "0.7.5"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -517,14 +517,12 @@ def promotion_or_404(pid: str):
 
 @app.post("/promotions/{pid}/{verb}")
 def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: str = Form("/")):
-    """Approve or merge a promotion PR as the signed-in user. The platform only applies it if that
-    person is neither the requester nor the PR's author, so the dashboard won't even try."""
+    """Approve or merge a promotion PR as the signed-in user, with their own forge access: the forge
+    decides who may. The platform applies what is merged and records whether a second person did."""
     user = auth.require(request)
     auth.check_csrf(user, csrf)
     p = promotion_or_404(pid)
     url = next if next.startswith("/") else "/"
-    if user.login in (p.requested_by, p.pr["author"]):
-        return back(url, "A second person has to approve this promotion.")
     with auth.as_user(user) as c:
         if verb == "approve":
             r = c.post(f"/repos/{STATE_REPO}/pulls/{p.pr['number']}/reviews",

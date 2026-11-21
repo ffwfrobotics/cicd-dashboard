@@ -104,13 +104,21 @@ class Destiny(unittest.TestCase):
         self.assertEqual(s["promotion"].state, "run")
         self.assertEqual(s["approved"].state, "run")          # ada approving her own request doesn't count
 
-    def test_self_merged_promotion_is_refused(self):
+    def test_self_merged_promotion_is_scheduled_and_flagged(self):
         p = {"id": "x", "state": "pending", "not_before": "2026-11-19T19:00:00Z", "requested_by": "ada",
              "approval": None, "applied_at": None, "security": None,
              "pr": {"number": 4, "url": "u", "state": "closed", "merged": True, "author": "bot", "merged_by": "ada",
                     "approvers": []}}
         s = {x.key: x for x in destiny(facts(deploy=LIVE, security={"status": "pass"}, promotion=p))}
-        self.assertEqual(s["approved"].state, "fail")
+        self.assertEqual((s["approved"].state, s["scheduled"].state), ("warn", "run"))   # applied when due, not refused
+
+    def test_applied_without_a_second_person_stays_flagged(self):
+        p = {"id": "x", "state": "done", "not_before": "", "requested_by": "ada", "separated": False,
+             "approval": "PR #4 merged by ada: no second person (requested by ada)", "applied_at": "2026-11-19T19:05:00Z",
+             "security": None, "pr": {"number": 4, "url": "u", "state": "closed", "merged": True, "author": "bot",
+                                      "merged_by": "ada", "approvers": []}}
+        s = {x.key: x for x in destiny(facts(deploy=LIVE, promotion=p, in_prod=True))}
+        self.assertEqual((s["approved"].state, s["scheduled"].state, s["prod"].state), ("warn", "ok", "ok"))
 
     def test_merged_and_due_then_applied(self):
         pr = {"number": 4, "url": "u", "state": "closed", "merged": True, "author": "bot", "merged_by": "bob", "approvers": []}

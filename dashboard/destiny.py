@@ -229,17 +229,19 @@ def destiny(f: Facts) -> list[Stage]:
         st["promotion"].href = pr.get("url")
         approvers = [a for a in pr.get("approvers", []) if a not in (p["requested_by"], pr.get("author"))]
         merger = pr.get("merged_by")
+        # a second person: not the requester, and not the pipeline's account that opened the PR. Recorded, never
+        # enforced here: what is merged is applied (the forge can require approvals before the merge)
         if p.get("approval"):
-            st["approved"].state = "ok"
-            st["approved"].detail = p["approval"].rsplit(" by ", 1)[-1]      # the platform's record: "PR #8 merged by john"
+            st["approved"].state = "warn" if p.get("separated") is False else "ok"
+            st["approved"].detail = "no second person" if p.get("separated") is False else p["approval"].split(":")[0].rsplit(" by ", 1)[-1]
             st["approved"].tip = p["approval"]
         elif approvers or (merger and merger not in (p["requested_by"], pr.get("author"))):
             st["approved"].state = "ok"
             st["approved"].detail = ", ".join(approvers or [merger])
         elif pr.get("merged"):
-            st["approved"].state = "fail"
+            st["approved"].state = "warn"
             st["approved"].detail = "self-merged"
-            st["approved"].tip = f"Merged by {merger}, who requested it: it won't be applied"
+            st["approved"].tip = f"Merged by {merger}, who requested it: applied, and recorded as no second person"
         elif pr.get("state") == "open":
             st["approved"].state = "run"
             st["approved"].detail = "pending"

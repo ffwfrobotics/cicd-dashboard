@@ -240,7 +240,7 @@ class Model:
         if promos:
             p = sorted(promos, key=lambda p: (p.state != "done", p.id))[-1] if len(promos) > 1 else promos[0]
             f.promotion = {"id": p.id, "state": p.state, "not_before": p.not_before, "requested_by": p.requested_by,
-                           "approval": p.approval, "applied_at": p.applied_at, "pr": p.pr, "security": p.security,
+                           "approval": p.approval, "separated": p.separated, "applied_at": p.applied_at, "pr": p.pr, "security": p.security,
                            "reason": p.reason}
         return f
 
