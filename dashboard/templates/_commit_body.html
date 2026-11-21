@@ -4,7 +4,8 @@
 
 <div class="road">
 {% for p in phases(c.stages) %}
-  <details class="phase {{ p.state }}{% if p.key == 'release' %} prodside{% endif %}"{% if p.state in ('fail', 'warn', 'run') or p.blockers %} open{% endif %}>
+  {% set act = (p.stages | selectattr('action') | first or {}).action %}
+  <details class="phase {{ p.state }}{% if p.key == 'release' %} prodside{% endif %}"{% if p.state in ('fail', 'warn', 'run') or p.blockers or act %} open{% endif %}>
     <summary title="{{ p.role }}">
       {{ icon(p.state) }}
       <div class="lb">{{ p.label }}</div>
@@ -19,6 +20,18 @@
         {% if s.detail %}<span class="dt">{{ s.detail }}</span>{% endif %}
       </div>
     {% endfor %}
+    {% if act == 'request-promotion' %}
+      {% if user and can_write %}
+      <details class="pop"><summary title="Promote what dev runs now; a second person approves it">Request</summary>
+        <form class="fields" method="post" action="/a/{{ a.name }}/act">
+          <input type="hidden" name="action" value="request-promotion"><input type="hidden" name="next" value="/a/{{ a.name }}/c/{{ c.sha }}{% if c.branch %}?branch={{ c.branch }}{% endif %}">{{ csrf(user) }}
+          <label>Reason<input name="reason" size="24"></label>
+          <label title="Empty: as soon as approved">Not before (UTC)<input name="not_before" type="datetime-local"></label>
+          <button class="primary" title="Opens a promotion PR; a second person approves it">Request</button>
+        </form>
+      </details>
+      {% elif not user and auth_enabled %}<a class="btn" href="/auth/login?next=/a/{{ a.name }}/c/{{ c.sha }}" title="Sign in to request a promotion">Sign in</a>{% endif %}
+    {% endif %}
     </div>
   </details>
 {% endfor %}

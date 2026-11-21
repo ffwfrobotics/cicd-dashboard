@@ -44,6 +44,7 @@ class Stage:
     detail: str = ""
     href: str | None = None
     tip: str = ""              # hover text: the longer explanation
+    action: str | None = None  # what a person with write on the app can do here now (e.g. request-promotion)
     blockers: list[dict] = field(default_factory=list)   # what would block prod: [{category, rules}]
 
 
@@ -202,7 +203,7 @@ def destiny(f: Facts) -> list[Stage]:
         st["review"].href = "findings"
     elif a:
         st["review"].state = "ok"
-        st["review"].detail = "none"
+        st["review"].tip = "Nothing from IT Security"      # no detail: the phase shows the assessment's score
 
     # promotion side
     p = f.promotion
@@ -251,6 +252,8 @@ def destiny(f: Facts) -> list[Stage]:
     elif not f.in_prod:
         superseded = bool(f.deploy and not f.deploy.get("live"))
         st["promotion"].state = "skip" if (not on_dev or superseded) else "todo"
+        if st["promotion"].state == "todo":
+            st["promotion"].action = "request-promotion"
         st["promotion"].tip = (f"Merge to {f.dev_branch} to promote" if not on_dev
                                else "Only what dev runs now can be promoted" if superseded else "")
     if f.in_prod:

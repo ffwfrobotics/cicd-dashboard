@@ -52,6 +52,27 @@ class Destiny(unittest.TestCase):
         s = {x.key: x for x in destiny(facts(branch="feat", deploy=d, security={"status": "pass"}))}
         self.assertEqual(s["promotion"].state, "skip")
 
+    def test_live_dev_commit_offers_a_request(self):
+        s = {x.key: x for x in destiny(facts(deploy=LIVE, security={"status": "pass"}))}
+        self.assertEqual((s["promotion"].state, s["promotion"].action), ("todo", "request-promotion"))
+        self.assertEqual([x.key for x in s.values() if x.action], ["promotion"])
+
+    def test_no_request_for_branch_superseded_or_prod(self):
+        d = dict(LIVE, env="branch", env_dir="branch-feat")
+        for f in (facts(branch="feat", deploy=d), facts(deploy=dict(LIVE, live=False, superseded_by="c" * 40)),
+                  facts(deploy=LIVE, in_prod=True)):
+            self.assertFalse(any(x.action for x in destiny(f)))
+
+    def test_assess_detail_is_the_score_without_findings_from_it_security(self):
+        stages = destiny(facts(deploy=LIVE, security={"status": "pass"},
+                               assessment={"counts": {"satisfied": 2}, "coverage": {"uncovered": 1},
+                                           "objectives": [{"id": "a", "state": "satisfied"}, {"id": "b", "state": "satisfied"},
+                                                          {"id": "c", "state": "not-satisfied", "coverage": "uncovered"}]}))
+        a = next(p for p in phases(stages) if p.key == "assess")
+        by = {x.key: x for x in stages}
+        self.assertEqual((a.state, by["review"].state, by["review"].detail), ("ok", "ok", ""))
+        self.assertEqual(a.detail, by["assessed"].detail)
+
     def test_superseded_dev_build(self):
         d = dict(LIVE, live=False, superseded_by="c" * 40)
         s = {x.key: x for x in destiny(facts(deploy=d, security={"status": "pass"}))}
