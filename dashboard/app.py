@@ -31,7 +31,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.10.0"
+VERSION = "0.10.1"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie

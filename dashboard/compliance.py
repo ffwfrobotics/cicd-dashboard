@@ -39,7 +39,10 @@ def _get(c: httpx.Client, login: str, path: str, ttl: float = 15, raw: bool = Fa
         return hit[1]
     r = c.get(path)
     val = None if r.status_code == 404 else (r.content if raw else r.json()) if r.status_code == 200 else False
-    _cache[key] = (time.time(), val)
+    now = time.time()
+    for k in [k for k, (t, _) in _cache.items() if now - t >= 3600]:
+        del _cache[k]
+    _cache[key] = (now, val)
     return val
 
 

@@ -51,10 +51,15 @@ class Forgejo:
         self.ttl = ttl
         self._cache: dict[str, tuple[float, object]] = {}
 
-    def get(self, path: str, ttl: float | None = None, raw: bool = False):
+    MAX_TTL = 3600.0
+
+    def get(self, path: str, ttl: float | None = None, raw: bool = False, store: bool = True):
+        """GET with a time-bounded cache. Entries older than MAX_TTL are dropped on each miss, so
+        per-commit paths don't accumulate; store=False fetches without keeping the body."""
         ttl = self.ttl if ttl is None else ttl
+        now = time.monotonic()
         hit = self._cache.get(path)
-        if hit and time.monotonic() - hit[0] < ttl:
+        if hit and now - hit[0] < ttl:
             return hit[1]
         r = self.http.get(path)
         if r.status_code == 404:
@@ -62,7 +67,10 @@ class Forgejo:
         else:
             r.raise_for_status()
             val = r.content if raw else r.json()
-        self._cache[path] = (time.monotonic(), val)
+        for k in [k for k, (t, _) in self._cache.items() if now - t >= self.MAX_TTL]:
+            del self._cache[k]
+        if store:
+            self._cache[path] = (now, val)
         return val
 
 
@@ -175,7 +183,7 @@ class StateRepo:
         head = self.head()
         if self._state and self._state.head == head:
             return self._state
-        blob = self.forge.get(f"/repos/{self.repo}/archive/{head}.tar.gz", ttl=3600, raw=True)
+        blob = self.forge.get(f"/repos/{self.repo}/archive/{head}.tar.gz", raw=True, store=False)  # parsed state is kept, not the tarball
         files: dict[str, bytes] = {}
         with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
             for m in tar.getmembers():
