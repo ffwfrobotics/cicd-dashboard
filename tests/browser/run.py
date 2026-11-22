@@ -59,6 +59,32 @@ def wrapped_lineage(pg):
     assert links.count() >= 1, "no source link on the environment cards"
 
 
+@check
+def enroll_wrapped_through_the_form(pg):
+    """Add app, mode wrapped, on a fixture repo of this forge: the enroll workflow wraps it, and the app appears,
+    pending. Needs ENROLL_SOURCE (a repo the signed-in user administers) and ENROLL_NAME; the e2e runner cleans up."""
+    src, name = os.environ.get("ENROLL_SOURCE"), os.environ.get("ENROLL_NAME")
+    if not (src and name):
+        print("  (skipped: ENROLL_SOURCE and ENROLL_NAME not set)")
+        return
+    pg.goto(f"{BASE}/enroll", wait_until="load")
+    pg.locator("input[name=source]").fill(src)
+    pg.locator("input[name=name]").fill(name)
+    pg.locator("select[name=mode]").select_option("wrapped")
+    pg.locator("select[name=update]").select_option("follow")
+    pg.locator("form[method=post] button.primary").click()
+    pg.wait_for_load_state("load")
+    assert pg.locator(".flash").count() and f"ffwf-iac/{name}" in pg.locator(".flash").inner_text(), "no enrolling message"
+    import time
+    for _ in range(60):                                   # the workflow writes the record in about a minute
+        pg.goto(f"{BASE}/a/{name}", wait_until="load")
+        if pg.locator("h1").count() and not pg.locator("text=no enrolled application").count():
+            break
+        time.sleep(10)
+    else:
+        raise AssertionError(f"{name} did not appear within 10 minutes")
+
+
 def main():
     names = sys.argv[1:] or list(CHECKS)
     OUT.mkdir(exist_ok=True)
