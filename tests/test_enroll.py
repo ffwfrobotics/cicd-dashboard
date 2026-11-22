@@ -75,3 +75,72 @@ class Projects(unittest.TestCase):
                     return R(200, text='[submodule "config"]\n\tpath = config\n\turl = ../fx-config.git\n')
                 return R(200, trees[path]) if path in trees else R(404)
         self.assertEqual(E.projects(C(), "f/mono"), ["apps/a", "apps/b", "config/apps/c"])
+
+
+class ReadOnly(unittest.TestCase):
+    """CI/CD only reads a developer's repo: the bot gets read on it, and direct or monorepo enrollment
+    (which makes the repo an IaC root CI/CD writes to) is refused for anything but CI/CD's own repos."""
+
+    class R:
+        def __init__(self, code, data=None):
+            self.status_code, self._d, self.text = code, data, ""
+
+        def json(self):
+            return self._d
+
+    def run_enroll(self, mode, repo="dev/app"):
+        from unittest import mock
+
+        from dashboard import platform
+        calls = []
+        R = self.R
+
+        class User:          # the developer's session
+            def get(self, path, **k):
+                return R(200, {"permissions": {"admin": True}, "full_name": repo, "default_branch": "main", "empty": True}) \
+                    if path == f"/repos/{repo}" else R(200, [])
+
+            def put(self, path, json=None):
+                calls.append(("PUT", path, json))
+                return R(204)
+
+            def post(self, path, json=None, **k):
+                calls.append(("POST", path, json))
+                return R(201, {})
+
+        class Bot:
+            def get(self, path, **k):
+                return R(200, {"login": "ffwfbot"}) if path == "/user" else R(200, {"permissions": {}})
+
+            def post(self, path, json=None, **k):
+                calls.append(("BOT POST", path, None))
+                return R(201, {})
+
+        class Forge:
+            _cache = {}
+
+            def get(self, path, ttl=None, raw=False):
+                return b"owners: [ffwf-iac]\nrepos: [ffwf/cicd-dashboard]\n" if path.startswith(f"/repos/{platform.STATE_REPO}/raw/tenants/_writable.yaml") else None
+
+        with mock.patch.object(platform, "configured", return_value=True), \
+                mock.patch.object(platform, "_secret", return_value="s"), \
+                mock.patch.object(platform, "tenants", return_value={}), \
+                mock.patch.object(platform, "dispatch", return_value=(True, "")), \
+                mock.patch.object(enroll, "bot_client", return_value=Bot()):
+            done = enroll.enroll(User(), Forge(), "ada", name="my-app", source=f"{FORGE}/{repo}", owner="dev",
+                                 mirror=False, private=True, source_token="", hook_url="https://d/hooks/forge", mode=mode)
+        return done, calls
+
+    def test_direct_on_a_developers_repo_is_refused(self):
+        for mode in ("direct", "monorepo"):
+            with self.assertRaises(enroll.EnrollError, msg=mode):
+                self.run_enroll(mode)
+
+    def test_wrapped_grants_read_only(self):
+        done, calls = self.run_enroll("wrapped")
+        grants = [c for c in calls if c[1] == "/repos/dev/app/collaborators/ffwfbot"]
+        self.assertEqual(grants, [("PUT", "/repos/dev/app/collaborators/ffwfbot", {"permission": "read"})])
+
+    def test_ci_cds_own_repo_may_be_direct(self):
+        done, calls = self.run_enroll("direct", repo="ffwf/cicd-dashboard")
+        self.assertTrue(any(c[0] == "BOT POST" and "tenants/my-app.yaml" in c[1] for c in calls))

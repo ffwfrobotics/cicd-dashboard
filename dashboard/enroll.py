@@ -183,12 +183,17 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
         info = r.json()
         repo = info["full_name"]
 
-    # 2. the bot can check it out and post statuses
-    if not (bot.get(f"/repos/{repo}").json() or {}).get("permissions", {}).get("push"):
-        r = c.put(f"/repos/{repo}/collaborators/{bot_login}", json={"permission": "write"})
+    # direct and monorepo modes make the repo an IaC root, which CI/CD writes to: only its own repos
+    if mode in ("direct", "monorepo") and not platform.writable(forge, repo):
+        raise EnrollError(f"{repo} is your repo, and CI/CD only reads yours: enroll it as wrapped "
+                          f"(CI/CD keeps how it's built and deployed in ffwf-iac/{name})")
+
+    # 2. the bot can check it out (read: CI/CD never writes to a developer's repo)
+    if not (bot.get(f"/repos/{repo}").json() or {}).get("permissions", {}).get("pull"):
+        r = c.put(f"/repos/{repo}/collaborators/{bot_login}", json={"permission": "read"})
         if r.status_code not in (200, 204):
             raise _err(r, f"Adding {bot_login} to {repo}")
-        done.append(f"{bot_login} can read it and post statuses")
+        done.append(f"{bot_login} can read it")
 
     # 3. the push webhook
     hooks = c.get(f"/repos/{repo}/hooks")

@@ -31,7 +31,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -479,8 +479,8 @@ def forge_error(r) -> str:
 @app.post("/a/{name}/act")
 def act(request: Request, name: str, action: str = Form(...), branch: str = Form(""), reason: str = Form(""),
         not_before: str = Form(""), csrf: str = Form(""), next: str = Form("")):
-    """Self-service on an app: dispatched to the app's own pipeline as the user, who needs write on
-    its repo. Apps that live in the platform repo itself (hello) can only request promotions."""
+    """Self-service on an app: dispatched to the platform pipeline, naming the user, who needs write on
+    the app's repo. Apps that live in the platform repo itself (hello) can only request promotions."""
     user = auth.require(request)
     auth.check_csrf(user, csrf)
     a = app_or_404(name)
@@ -496,11 +496,6 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
                 return back(url, f"{action} isn't available for apps inside the platform repo")
             r = c.post(f"/repos/{repo}/actions/workflows/request-promotion.yaml/dispatches",
                        json={"ref": "master", "inputs": {"app": name, "from": "dev", "not_before": not_before, "reason": reason}})
-        elif model.forge.get(f"/repos/{repo}/contents/.forgejo/workflows/cicd.yaml", ttl=60) is not None:
-            # an app that still carries its own pipeline
-            r = c.post(f"/repos/{repo}/actions/workflows/cicd.yaml/dispatches",
-                       json={"ref": a.dev_branch, "inputs": {"action": action, "branch": branch,
-                                                             "not_before": not_before, "reason": reason}})
         else:
             # the platform pipeline: the dashboard checks write on the app repo, and names the user
             if not can_write(user, a):
@@ -568,7 +563,7 @@ def enroll_page(request: Request):
         return RedirectResponse(f"/auth/login?next=/enroll", status_code=303) if auth.ENABLED else back("/", "Adding an app needs sign-in")
     with auth.as_user(user) as c:
         owners = enrolling.owners(c, user.login)
-    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True, "mode": "direct", "update": "follow", "image": ""}
+    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True, "mode": "wrapped", "update": "follow", "image": ""}
     return page(request, "enroll.html", owners=owners, form=form)
 
 
@@ -580,7 +575,7 @@ async def enroll_post(request: Request):
     f = await request.form()
     auth.check_csrf(user, f.get("csrf", ""))
     get = lambda k: (f.get(k) or "").strip()
-    name, mode, update, image = get("name").lower(), get("mode") or "direct", get("update") or "follow", get("image")
+    name, mode, update, image = get("name").lower(), get("mode") or "wrapped", get("update") or "follow", get("image")
     paths = [p for p in f.getlist("path") if p]
     form = {"source": get("source"), "name": name, "owner": get("owner"), "mirror": bool(get("mirror")),
             "private": bool(get("private")), "mode": mode, "update": update, "image": image}

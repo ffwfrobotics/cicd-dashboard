@@ -74,6 +74,17 @@ def tenants(forge: Forgejo) -> dict[str, dict]:
     return out
 
 
+def writable(forge: Forgejo, repo: str) -> bool:
+    """Is this one of CI/CD's own repos (tenants/_writable.yaml in the platform repo)? CI/CD writes only to
+    those; a developer's repo is read only, so it is enrolled wrapped."""
+    raw = forge.get(f"/repos/{STATE_REPO}/raw/tenants/_writable.yaml?ref={STATE_BRANCH}", ttl=300, raw=True)
+    try:
+        w = yaml.safe_load(raw or b"") or {}
+    except yaml.YAMLError:
+        w = {}
+    return repo.split("/")[0] in (w.get("owners") or []) or repo in (w.get("repos") or [])
+
+
 def on_push(forge: Forgejo, event: str, payload: dict) -> list[str]:
     """A forge webhook: dispatch the pipeline for each app enrolled from this repo. Returns what it did."""
     repo = (payload.get("repository") or {}).get("full_name", "")
