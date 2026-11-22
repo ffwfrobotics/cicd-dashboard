@@ -28,10 +28,10 @@ from . import enroll as enrolling
 from . import compliance as comp
 from .destiny import PROD_SIDE, STAGES, phases, runtime_word
 from .model import Model
-from .sources import FORGE as FORGE_URL, STATE_REPO
+from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.10.1"
+VERSION = "0.11.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -187,7 +187,12 @@ def api_env_doc(name: str, env: str, doc: str):
     if doc not in OSCAL_DOCS:
         raise HTTPException(404, f"one of {', '.join(OSCAL_DOCS)}")
     st = model.state()
-    raw = st.files.get(f"envs/{model.state_repo.cluster}/{name}/{env}/{OSCAL_DOCS[doc]}")
+    try:
+        raw = model.state_repo.evidence_file(st, name, env, OSCAL_DOCS[doc])
+    except EvidenceMissing:
+        raise HTTPException(410, f"{env}: {doc} no longer kept") from None
+    except EvidenceAltered:
+        raise HTTPException(409, f"{env}: {doc} altered (sha256 differs from evidence.json)") from None
     if raw is None:
         raise HTTPException(404, f"{env} keeps no {doc}")
     return Response(raw, media_type="application/json")
@@ -374,7 +379,16 @@ def releases_prepare(request: Request, name: str, csrf: str = Form(""), envs: li
         return back(f"/a/{name}/releases", "Choose at least one environment.")
     st = model.state()
     rid = f"{name}-{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    ops, manifest = comp.release_package(rid, name, envs, st.files, st.head, user.login, note.strip(), model.state_repo.cluster)
+    files = dict(st.files)       # evidence kept as releases: the package carries the bytes, checked against evidence.json
+    for e in envs:
+        for n in ((a.env(e).evidence or {}).get("files") or {}):
+            try:
+                raw = model.state_repo.evidence_file(st, name, e, f"evidence/{n}")
+            except (EvidenceMissing, EvidenceAltered) as x:
+                return back(f"/a/{name}/releases", f"{e}: evidence {n} {'missing' if isinstance(x, EvidenceMissing) else 'altered'}")
+            if raw is not None:
+                files[f"envs/{model.state_repo.cluster}/{name}/{e}/evidence/{n}"] = raw
+    ops, manifest = comp.release_package(rid, name, envs, files, st.head, user.login, note.strip(), model.state_repo.cluster)
     lines = "\n".join(f"| `{e}` | `{(a.env(e).commit or '')[:7]}` | "
                        + (f"{a.env(e).assessment['counts']['satisfied']}/{len(a.env(e).assessment['objectives'])}" if a.env(e).assessment else "none")
                        + f" | {(a.env(e).security or {}).get('status', '?')} |" for e in envs)

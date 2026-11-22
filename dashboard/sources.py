@@ -6,6 +6,7 @@ model rebuilt from them, cached for a few seconds.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 
 import io
 import json
@@ -73,6 +74,25 @@ class Forgejo:
             self._cache[path] = (now, val)
         return val
 
+    def asset(self, url: str, sha256: str) -> bytes:
+        """A release asset of the evidence repo (an absolute URL), checked against the sha256 that the
+        platform repo's evidence.json records. Not cached: callers keep what they derive from it."""
+        r = self.http.get(url, follow_redirects=True)
+        if r.status_code == 404:
+            raise EvidenceMissing(url)
+        r.raise_for_status()
+        if hashlib.sha256(r.content).hexdigest() != sha256:
+            raise EvidenceAltered(url)
+        return r.content
+
+
+class EvidenceMissing(Exception):
+    """A file evidence.json lists isn't on the evidence repo (retention removed it, or someone did)."""
+
+
+class EvidenceAltered(Exception):
+    """A file on the evidence repo doesn't match the sha256 the platform repo recorded for it."""
+
 
 @dataclass
 class Env:
@@ -92,6 +112,8 @@ class Env:
     packages: list[dict] = field(default_factory=list)  # from evidence/sbom.cdx.json: name, version, purl, ecosystem
     sources: list[dict] = field(default_factory=list)   # [{path, repo, commit}]: the source commits it runs (wrapped/monorepo)
     target: str | None = None      # the cluster it runs on, when not this one (docs/stacks.md "Targets")
+    evidence: dict | None = None   # evidence/evidence.json: the release on the evidence repo that holds its scans
+    evidence_state: str = "inline"  # inline | kept | missing | altered (the SBOM, checked when the head loads)
 
 
 @dataclass
@@ -150,6 +172,7 @@ class StateRepo:
     def __init__(self, forge: Forgejo, repo: str = STATE_REPO, branch: str = STATE_BRANCH, cluster: str = CLUSTER):
         self.forge, self.repo, self.branch, self.cluster = forge, repo, branch, cluster
         self._state: State | None = None
+        self._pkgs: dict[str, list[dict]] = {}     # SBOM sha256 -> its packages (evidence kept as releases)
 
     def head(self) -> str:
         b = self.forge.get(f"/repos/{self.repo}/branches/{self.branch}", ttl=5)
@@ -192,8 +215,46 @@ class StateRepo:
                 name = m.name.split("/", 1)[1] if "/" in m.name else m.name  # drop the archive's top dir
                 if name.startswith(("tenants/", "envs/", "promotions/", "clusters/", "stacks/")):
                     files[name] = tar.extractfile(m).read()
-        self._state = parse_state(head, files, self.cluster)
+        st = parse_state(head, files, self.cluster)
+        self._release_packages(st)
+        self._state = st
         return self._state
+
+    def _release_packages(self, st: State):
+        """Packages of SBOMs kept on the evidence repo: fetched once per SBOM (by sha256), not per commit."""
+        used = set()
+        for e in (e for es in st.envs.values() for e in es):
+            f = ((e.evidence or {}).get("files") or {}).get("sbom.cdx.json")
+            if e.evidence is None or not e.evidence.get("tag"):
+                continue
+            e.evidence_state = "kept"
+            if not f:
+                continue
+            used.add(f["sha256"])
+            if f["sha256"] not in self._pkgs:
+                try:
+                    self._pkgs[f["sha256"]] = sbom_packages(self.forge.asset(f["url"], f["sha256"]))
+                except EvidenceMissing:
+                    e.evidence_state = "missing"
+                    continue
+                except EvidenceAltered:
+                    e.evidence_state = "altered"
+                    continue
+                except httpx.HTTPError:
+                    continue            # the forge is away: no packages this time, tried again next head
+            e.packages = self._pkgs[f["sha256"]]
+        for k in set(self._pkgs) - used:
+            del self._pkgs[k]
+
+    def evidence_file(self, st: State, app: str, env_dir: str, rel: str) -> bytes | None:
+        """One of an environment's evidence files: inline in the platform repo, or from its release."""
+        prefix = f"envs/{self.cluster}/{app}/{env_dir}/"
+        if prefix + rel in st.files:
+            return st.files[prefix + rel]
+        raw = st.files.get(prefix + "evidence/evidence.json")
+        m = json.loads(raw) if raw else {}
+        f = (m.get("files") or {}).get(rel.removeprefix("evidence/")) if rel.startswith("evidence/") else None
+        return self.forge.asset(f["url"], f["sha256"]) if f and f.get("url") else None
 
     def _attach_prs(self, st: State):
         prs = self.forge.get(f"/repos/{self.repo}/pulls?state=all&limit=50", ttl=15) or []
@@ -269,7 +330,8 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
                 rendered_at=meta.get("renderedAt"), security=(rec or {}).get("gate"),
                 failing=[f for f in (rec or {}).get("findings", []) if f.get("outcome") == "fail"],
                 promotion=meta.get("promotion"), assessment=summ, external=(rec or {}).get("external") or [],
-                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json")), sources=meta.get("sources") or [], target=on))
+                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json")), sources=meta.get("sources") or [], target=on,
+                evidence=json.loads(files[d + "evidence/evidence.json"]) if d + "evidence/evidence.json" in files else None))
     paused = {}
     for p in files:
         m = re.match(rf"{re.escape(prefix)}([^/]+)/paused.yaml$", p)
