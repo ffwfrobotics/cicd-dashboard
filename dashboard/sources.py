@@ -83,6 +83,7 @@ class Env:
     external: list[dict] = field(default_factory=list)  # IT Security's findings as tests, this env's last gate
     packages: list[dict] = field(default_factory=list)  # from evidence/sbom.cdx.json: name, version, purl, ecosystem
     sources: list[dict] = field(default_factory=list)   # [{path, repo, commit}]: the source commits it runs (wrapped/monorepo)
+    target: str | None = None      # the cluster it runs on, when not this one (docs/stacks.md "Targets")
 
 
 @dataclass
@@ -127,6 +128,8 @@ class State:
     limits: dict                   # tenants/_limits.yaml
     fetched: float
     files: dict[str, bytes] = field(default_factory=dict, repr=False)   # envs/ as archived (release packages)
+    stacks: dict[str, dict] = field(default_factory=dict)   # stack -> {latest, runs}: stacks/<cluster>/<name>/ (docs/stacks.md)
+    targets: dict[str, dict] = field(default_factory=dict)  # target -> clusters/<target>/target.yaml spec
 
 
 DEPLOY_RE = re.compile(r"^deploy (dev|branch): (\S+) (\S+)")
@@ -179,7 +182,7 @@ class StateRepo:
                 if not m.isfile():
                     continue
                 name = m.name.split("/", 1)[1] if "/" in m.name else m.name  # drop the archive's top dir
-                if name.startswith(("tenants/", "envs/", "promotions/", "clusters/")):
+                if name.startswith(("tenants/", "envs/", "promotions/", "clusters/", "stacks/")):
                     files[name] = tar.extractfile(m).read()
         self._state = parse_state(head, files, self.cluster)
         return self._state
@@ -243,9 +246,11 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
             t = yaml.safe_load(files[p])
             tenants[t["metadata"]["name"]] = t
     envs: dict[str, list[Env]] = {}
+    target_names = [m.group(1) for p in files if (m := re.match(r"clusters/([^/]+)/target\.yaml$", p))]
     prefix = f"envs/{cluster}/"
     for p in sorted(files):
-        if p.startswith(prefix) and p.endswith("/cicd-env.yaml"):
+        on = next((t for t in target_names if p.startswith(f"envs/{t}/")), None)
+        if (p.startswith(prefix) or on) and p.endswith("/cicd-env.yaml"):
             meta = yaml.safe_load(files[p])
             d = p[: -len("cicd-env.yaml")]
             rec = json.loads(files[d + "security-record.json"]) if d + "security-record.json" in files else None
@@ -256,7 +261,7 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
                 rendered_at=meta.get("renderedAt"), security=(rec or {}).get("gate"),
                 failing=[f for f in (rec or {}).get("findings", []) if f.get("outcome") == "fail"],
                 promotion=meta.get("promotion"), assessment=summ, external=(rec or {}).get("external") or [],
-                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json")), sources=meta.get("sources") or []))
+                packages=sbom_packages(files.get(d + "evidence/sbom.cdx.json")), sources=meta.get("sources") or [], target=on))
     paused = {}
     for p in files:
         m = re.match(rf"{re.escape(prefix)}([^/]+)/paused.yaml$", p)
@@ -276,10 +281,26 @@ def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:
         if d.get("cluster") != cluster:
             continue
         promotions.append(promotion_of(d, m.group(1)))
-    return State(head=head, cluster=y(f"clusters/{cluster}/cicd-cluster.yaml") or {}, tenants=tenants,
+    stacks: dict[str, dict] = {}
+    for p in files:
+        m = re.match(rf"stacks/{re.escape(cluster)}/([^/]+)/runs/([^/]+)\.json$", p)
+        if m:
+            try:
+                stacks.setdefault(m.group(1), {"runs": []})["runs"].append(json.loads(files[p]))
+            except ValueError:
+                continue
+    for s in stacks.values():
+        s["runs"].sort(key=lambda r: int(r.get("run") or 0) if str(r.get("run", "")).isdigit() else 0, reverse=True)
+        s["latest"] = s["runs"][0] if s["runs"] else None
+    targets = {}
+    for p in files:
+        m = re.match(r"clusters/([^/]+)/target\.yaml$", p)
+        if m:
+            targets[m.group(1)] = (yaml.safe_load(files[p]) or {}).get("spec") or {}
+    return State(head=head, cluster=y(f"clusters/{cluster}/cicd-cluster.yaml") or {}, tenants=tenants, stacks=stacks, targets=targets,
                  envs=envs, promotions=promotions, configs=configs, paused=paused,
                  limits=y("tenants/_limits.yaml") or {}, fetched=time.time(),
-                 files={k: v for k, v in files.items() if k.startswith(prefix)})
+                 files={k: v for k, v in files.items() if k.startswith(prefix) or any(k.startswith(f"envs/{t}/") for t in target_names)})
 
 
 def sbom_packages(raw: bytes | None) -> list[dict]:

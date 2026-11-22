@@ -3,7 +3,7 @@
 <div class="cards">
 {% for e in a.envs %}
   <div class="card">
-    <h3>{{ e.dir }}{% if e.kind == 'prod' %} <span class="pill plain">prod</span>{% endif %}</h3>
+    <h3>{{ e.dir }}{% if e.kind == 'prod' %} <span class="pill plain">prod</span>{% endif %}{% if e.target %} <span class="pill plain" title="Runs on the target cluster {{ e.target }} ({{ (targets.get(e.target) or {}).get('managedBy', 'external') }}): rendered into envs/{{ e.target }}/">{{ e.target }}</span>{% endif %}</h3>
     {% for h in e.hosts %}<div><a href="https://{{ h }}/">{{ h }}</a></div>{% endfor %}
     <div class="muted small"><a href="/a/{{ a.name }}/c/{{ e.commit }}{% if e.branch %}?branch={{ e.branch }}{% endif %}"><code>{{ (e.commit or '')[:7] }}</code></a>{% if e.branch %} · <code>{{ e.branch }}</code>{% endif %} · {{ e.rendered_at | ts }}</div>
     {% for s in e.sources %}<div class="muted small" title="Source {{ s.path }}/: the code this build is from">{{ s.path }} ← <a href="{{ FORGE }}/{{ s.repo }}/commit/{{ s.commit }}">{{ s.repo }}@<code>{{ (s.commit or '')[:7] }}</code></a></div>{% endfor %}
@@ -11,6 +11,39 @@
   </div>
 {% endfor %}
 </div>
+
+{% if stack and stack.latest %}{% set r = stack.latest %}{% set st = {'ready': 'ok'}.get(r.word, 'fail') %}
+<h2>Stack <span class="aside" title="The last {{ stack.runs | length }} dev runs: a cluster stood up from the stack's commit, checked, stood down (docs/stacks.md)">{{ stack.runs | length }} runs</span></h2>
+<div class="cards">
+  <div class="card">
+    <h3><span class="pill s-{{ st }}" title="{{ r.error or ('Every Flux Kustomization Ready' if r.word == 'ready' else r.word) }}">{{ r.word }}</span>
+      <a href="/a/{{ a.name }}/c/{{ r.commit }}"><code>{{ (r.commit or '')[:7] }}</code></a></h3>
+    <div class="chips">
+      <span class="pill plain" title="The provider that made the cluster, and its version">{{ r.provider }}</span>
+      <span class="pill {{ 's-warn' if r.isolation == 'none' else 'plain' }}" title="Isolation from the host cluster: none (privileged), userns or vm. Recorded on every run; a deployment may set a floor">{{ r.isolation }}</span>
+      {% if r.slot %}<span class="pill plain" title="Pods {{ r.slot.pod_cidr }}, services {{ r.slot.svc_cidr }}">{{ r.slot.name }}</span>{% endif %}
+    </div>
+    <div class="chips">{% set ck = r.steps.check or {} %}
+      {% for c in ck.exercised or [] %}<span class="pill s-ok" title="Needed by the stack's checks, and exercised by this provider">{{ c }}</span>{% endfor %}
+      {% for c in ck.not_exercised or [] %}<span class="pill plain" title="Needed by the stack's checks, but this provider lacks it: not exercised, not passed">{{ icon('skip') }} {{ c }}</span>{% endfor %}
+    </div>
+    <div class="muted small">
+      {% if r.steps.up %}<span title="Cluster up (nested API ready)">up {{ r.steps.up.seconds }}s</span>{% endif %}
+      {% if ck.seconds is defined %} · <span title="Until every Flux Kustomization was Ready">ready {{ ck.seconds }}s</span>{% endif %}
+      {% if r.steps.smoke %} · <span title="{{ (r.steps.smoke.log or '')[-300:] }}">smoke {{ r.steps.smoke.result }}</span>{% endif %}
+      {% if r.runUrl %} · <a href="{{ r.runUrl }}">run</a>{% endif %}
+    </div>
+  </div>
+</div>
+<table>
+<tr><th>Run</th><th>Commit</th><th>Result</th><th title="Flux Kustomizations Ready / total">Flux</th><th>Provider</th></tr>
+{% for x in stack.runs[:10] %}{% set ks = (x.steps.check or {}).kustomizations or [] %}
+<tr><td>{% if x.runUrl %}<a href="{{ x.runUrl }}">{{ x.run }}</a>{% else %}{{ x.run }}{% endif %}</td><td><code>{{ (x.commit or '')[:7] }}</code></td>
+  <td><span class="pill s-{{ {'ready': 'ok'}.get(x.word, 'fail') }}">{{ x.word }}</span></td>
+  <td>{{ ks | selectattr('ready') | list | length }}/{{ ks | length }}</td><td>{{ x.provider }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
 
 {% if dev and promo and not promo.action and promo.state != 'skip' %}
 <h2>Promote</h2>

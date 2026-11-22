@@ -31,7 +31,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO
 
 HERE = Path(__file__).parent
-VERSION = "0.9.1"
+VERSION = "0.10.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -134,15 +134,17 @@ def dev_promotion(a) -> tuple[str | None, object]:
 @app.get("/a/{name}", response_class=HTMLResponse)
 def app_page(request: Request, name: str):
     a = app_or_404(name)
+    st = model.state()
     return page(request, "app.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
-                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1])
+                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1], stack=st.stacks.get(name), targets=st.targets)
 
 
 @app.get("/a/{name}/fragment/body", response_class=HTMLResponse)
 def app_body(request: Request, name: str):
     a = app_or_404(name)
+    st = model.state()
     return page(request, "_app_body.html", a=a, branches=model.branches(a), history=model.history(a), usage=model.usage(a.tenant),
-                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1])
+                runtimes=model.env_runtimes(a), promo=dev_promotion(a)[1], stack=st.stacks.get(name), targets=st.targets)
 
 
 @app.get("/a/{name}/c/{sha}", response_class=HTMLResponse)
