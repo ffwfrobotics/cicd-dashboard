@@ -82,7 +82,8 @@ def tenant_doc(name: str, owner: str, repo: str, requester: str, default_branch:
             + yaml.safe_dump(t, sort_keys=False))
 
 
-MODES = ("direct", "wrapped", "monorepo")
+MODES = ("direct", "wrapped", "monorepo", "prebuilt")
+IMAGE_RE = re.compile(r"^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9._-]+$")
 
 
 def _project_dirs(tree: list[dict], prefix: str = "") -> set[str]:
@@ -122,7 +123,7 @@ def projects(c: httpx.Client, repo: str) -> list[str]:
 
 def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: str, owner: str,
            mirror: bool, private: bool, source_token: str, hook_url: str, mode: str = "direct",
-           update: str = "follow", paths: list[str] | None = None) -> list[str]:
+           update: str = "follow", paths: list[str] | None = None, image: str = "") -> list[str]:
     """Do it; returns what was done. Raises EnrollError with what to fix.
     direct: the repo is the app (the dashboard writes the record). wrapped and monorepo: the platform's
     enroll workflow does the rest as the bot (cicd-ref-arch docs/enrollment.md), named for this user."""
@@ -131,6 +132,15 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
     if not platform.configured():
         raise EnrollError("The dashboard has no platform token here")
     hook_secret = platform._secret("hook-secret")
+    if mode == "prebuilt":     # nothing to import: the platform's enroll workflow wraps the image (cicd-ref-arch)
+        if not IMAGE_RE.match(image or ""):
+            raise EnrollError("Image: registry/repository:tag")
+        check_name(name, platform.tenants(forge))
+        ok, msg = platform.dispatch({"app": name, "mode": "prebuilt", "image": image, "update": update,
+                                     "actor": login, "hook_url": hook_url}, workflow="enroll.yaml")
+        if not ok:
+            raise EnrollError(f"Enrolling {name} was not started: {msg}")
+        return [f"{name}: following {image} from ffwf-iac/{name}"]
     enrolled = platform.tenants(forge)
     for n in ([f"{name}-{p.rstrip('/').rsplit('/', 1)[-1]}" for p in paths or []] if mode == "monorepo" else [name]):
         check_name(n, enrolled)

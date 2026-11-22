@@ -16,9 +16,11 @@
   <label class="check" title="Visible only to the owner's members"><input type="checkbox" name="private" value="1"{% if form.private %} checked{% endif %}>Private</label>
   <label title="Only for a private source: a read token there. Used once to import (kept by the forge for a mirror)">Source token
     <input name="source_token" type="password" size="24" autocomplete="off"></label>
-  <label title="direct: the repo builds and deploys itself (its cicd.yaml, deploy/, Dockerfile). wrapped: the platform owns how it is built and deployed, in ffwf-iac/<name>, with the repo as src/; nothing is pushed to the repo. monorepo: projects in the repo, each enrolled from its folder">Mode
-    <select name="mode">{% for m in ['direct', 'wrapped', 'monorepo'] %}<option{% if m == form.mode %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
-  <label title="wrapped and monorepo: follow commits each push to the code into the IaC repo and deploys it; pin opens a PR for each, deployed when merged">Updates
+  <label title="direct: the repo builds and deploys itself (its cicd.yaml, deploy/, Dockerfile). wrapped: the platform owns how it is built and deployed, in ffwf-iac/<name>, with the repo as src/; nothing is pushed to the repo. monorepo: projects in the repo, each enrolled from its folder. prebuilt: an image built elsewhere, deployed and scanned by digest (Source is not used)">Mode
+    <select name="mode">{% for m in ['direct', 'wrapped', 'monorepo', 'prebuilt'] %}<option{% if m == form.mode %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
+  <label title="prebuilt: the image to follow, registry/repository:tag. Its digest is pinned in ffwf-iac/<name>">Image
+    <input name="image" size="48" value="{{ form.image }}" placeholder="registry.example/team/app:1.0"></label>
+  <label title="wrapped, monorepo and prebuilt: follow commits each push to the code into the IaC repo and deploys it; pin opens a PR for each, deployed when merged">Updates
     <select name="update">{% for u in ['follow', 'pin'] %}<option{% if u == form.update %} selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
   {% if projects is defined %}
   <fieldset class="projects" title="Folders of {{ repo }} with a cicd.yaml or a Dockerfile, and its submodules. Each one picked is enrolled as <name>-<folder>">

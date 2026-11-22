@@ -552,7 +552,7 @@ def enroll_page(request: Request):
         return RedirectResponse(f"/auth/login?next=/enroll", status_code=303) if auth.ENABLED else back("/", "Adding an app needs sign-in")
     with auth.as_user(user) as c:
         owners = enrolling.owners(c, user.login)
-    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True, "mode": "direct", "update": "follow"}
+    form = {"source": "", "name": "", "owner": owners[-1], "mirror": False, "private": True, "mode": "direct", "update": "follow", "image": ""}
     return page(request, "enroll.html", owners=owners, form=form)
 
 
@@ -564,15 +564,15 @@ async def enroll_post(request: Request):
     f = await request.form()
     auth.check_csrf(user, f.get("csrf", ""))
     get = lambda k: (f.get(k) or "").strip()
-    name, mode, update = get("name").lower(), get("mode") or "direct", get("update") or "follow"
+    name, mode, update, image = get("name").lower(), get("mode") or "direct", get("update") or "follow", get("image")
     paths = [p for p in f.getlist("path") if p]
     form = {"source": get("source"), "name": name, "owner": get("owner"), "mirror": bool(get("mirror")),
-            "private": bool(get("private")), "mode": mode, "update": update}
+            "private": bool(get("private")), "mode": mode, "update": update, "image": image}
     with auth.as_user(user) as c:
         try:
             done = enrolling.enroll(c, model.forge, user.login, name=name, source=get("source"), owner=get("owner"),
                                     mirror=bool(get("mirror")), private=bool(get("private")), source_token=get("source_token"),
-                                    hook_url=hook_url(request), mode=mode, update=update, paths=paths)
+                                    hook_url=hook_url(request), mode=mode, update=update, paths=paths, image=image)
         except enrolling.EnrollError as e:
             return page(request, "enroll.html", owners=enrolling.owners(c, user.login), form=form, msg=str(e))
         if mode == "monorepo" and not paths:
