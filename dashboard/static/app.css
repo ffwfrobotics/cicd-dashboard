@@ -113,3 +113,10 @@ details.pop .fields { margin-top: .5rem; }
 h1 form.inline button { font-size: .8rem; vertical-align: .2em; }
 button[aria-busy="true"] { opacity: .6; cursor: progress; }
 fieldset.projects { border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .7rem; display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+
+/* factory */
+table.list { border-collapse: collapse; margin: .5rem 0 1rem; }
+table.list th, table.list td { text-align: left; padding: .25rem .75rem .25rem 0; vertical-align: top; }
+pre.log { white-space: pre-wrap; max-height: 70vh; overflow: auto; padding: .75rem; border-radius: 6px;
+          background: var(--panel, rgba(127,127,127,.08)); font-size: .85em; }
+.fields label.wide { flex-basis: 100%; }

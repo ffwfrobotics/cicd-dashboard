@@ -24,6 +24,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from . import auth, platform
+from . import factory as fac
 from . import enroll as enrolling
 from . import compliance as comp
 from .destiny import PROD_SIDE, STAGES, phases, runtime_word
@@ -31,7 +32,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -607,6 +608,133 @@ def approve(request: Request, name: str, csrf: str = Form("")):
         except enrolling.EnrollError as e:
             return back(f"/a/{name}", str(e))
     return back(f"/a/{name}", msg)
+
+
+# ---------------------------------------------------------------- the software factory (dashboard/factory.py)
+
+
+def _factory_user(request: Request):
+    user = auth.current(request)
+    if user is None:
+        return None, (RedirectResponse("/auth/login?next=/factory", status_code=303) if auth.ENABLED
+                      else back("/", "The factory needs sign-in"))
+    if not fac.configured():
+        return None, back("/", "The factory isn't set up here")
+    return user, None
+
+
+@app.get("/factory", response_class=HTMLResponse)
+def factory_page(request: Request):
+    user, out = _factory_user(request)
+    if out:
+        return out
+    grants = fac.grants(model.forge)
+    with auth.as_user(user) as c:
+        admin = fac.admin_repos(c)
+        granted = [r for r, g in grants.items() if fac.can_write(c, r)]
+    msg = ""
+    try:
+        sessions, providers = fac.sessions(user.login), fac.providers(user.login)
+    except fac.FactoryError as e:
+        sessions, providers, msg = [], [], str(e)
+    return page(request, "factory.html", grants=grants, admin_repos=admin, granted=granted, sessions=sessions,
+                providers=providers, harnesses=fac.HARNESSES, kinds=fac.KINDS, **({"msg": msg} if msg else {}))
+
+
+@app.post("/factory/grant")
+def factory_grant(request: Request, repo: str = Form(...), role: str = Form("write"), days: str = Form(""), csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    try:
+        with auth.as_user(user) as c:
+            msg = fac.grant(c, enrolling.bot_client(), user.login, repo, role, int(days) if days.strip() else None)
+    except (fac.FactoryError, ValueError) as e:
+        msg = str(e)
+    model.forge._cache.clear()
+    return back("/factory", msg)
+
+
+@app.post("/factory/revoke")
+def factory_revoke(request: Request, repo: str = Form(...), csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    try:
+        with auth.as_user(user) as c:
+            msg = fac.revoke(c, enrolling.bot_client(), model.forge, user.login, repo)
+    except fac.FactoryError as e:
+        msg = str(e)
+    model.forge._cache.clear()
+    return back("/factory", msg)
+
+
+@app.post("/factory/sessions")
+def factory_start(request: Request, repo: str = Form(...), harness: str = Form(...), provider: str = Form("local"),
+                  prompt: str = Form(...), ttl: int = Form(60), csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    try:
+        with auth.as_user(user) as c:
+            s = fac.start(c, user.login, repo, harness, provider, prompt, ttl)
+    except fac.FactoryError as e:
+        return back("/factory", str(e))
+    return RedirectResponse(f"/factory/s/{s['id']}", status_code=303)
+
+
+@app.get("/factory/s/{sid}", response_class=HTMLResponse)
+def factory_session(request: Request, sid: str):
+    user, out = _factory_user(request)
+    if out:
+        return out
+    try:
+        s = fac.session(user.login, sid)
+    except fac.FactoryError as e:
+        return back("/factory", str(e))
+    return page(request, "factory_session.html", s=s)
+
+
+@app.get("/factory/s/{sid}/log", response_class=PlainTextResponse)
+def factory_session_log(request: Request, sid: str):
+    user = auth.require(request)
+    try:
+        return fac.session(user.login, sid).get("log", "")
+    except fac.FactoryError as e:
+        return str(e)
+
+
+@app.post("/factory/s/{sid}/stop")
+def factory_stop(request: Request, sid: str, csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    try:
+        fac.stop(user.login, sid)
+    except fac.FactoryError as e:
+        return back(f"/factory/s/{sid}", str(e))
+    return back(f"/factory/s/{sid}", "Stopped")
+
+
+@app.post("/factory/providers")
+def factory_attach(request: Request, name: str = Form(...), kind: str = Form(...), model_id: str = Form(..., alias="model"),
+                   base_url: str = Form(""), key_name: str = Form(...), key: str = Form(...), csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    if key_name not in fac.KINDS.get(kind, ()):
+        return back("/factory", f"A {kind} account takes {', '.join(fac.KINDS.get(kind, ())) or 'nothing'}")
+    try:
+        fac.attach(user.login, name, kind, model_id, base_url.strip(), {key_name: key.strip()})
+    except fac.FactoryError as e:
+        return back("/factory", str(e))
+    return back("/factory", f"{name}: attached")
+
+
+@app.post("/factory/providers/{name}/delete")
+def factory_detach(request: Request, name: str, csrf: str = Form("")):
+    user = auth.require(request)
+    auth.check_csrf(user, csrf)
+    try:
+        fac.detach(user.login, name)
+    except fac.FactoryError as e:
+        return back("/factory", str(e))
+    return back("/factory", f"{name}: detached")
 
 
 # ---------------------------------------------------------------- the forge's webhook

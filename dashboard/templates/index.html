@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import gate, score %}
 {% block body %}
-{% if user %}<div class="toolbar"><a class="btn primary" href="/enroll" title="Import a repository and enroll it: branch environments until an admin approves">Add app</a></div>{% endif %}
+{% if user %}<div class="toolbar"><a class="btn primary" href="/enroll" title="Import a repository and enroll it: branch environments until an admin approves">Add app</a> <a class="btn" href="/factory" title="Agents on repos you grant: sessions, grants, models">Factory</a></div>{% endif %}
 {% for tenant, apps in tenants.items() %}
 <h2><span class="muted">Tenant</span> {{ tenant }}</h2>
 <div class="cards">

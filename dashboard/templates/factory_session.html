@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}{{ s.id }} · Factory · {{ BRAND }}{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/factory">Factory</a></div>
+<h1><code>{{ s.id }}</code> <span class="pill {{ {'Succeeded': 's-ok', 'Failed': 's-fail', 'Running': 's-run'}.get(s.phase, 'plain') }}">{{ s.phase | lower }}</span>
+  <span class="sub">{{ s.harness }} on <a href="{{ FORGE }}/{{ s.repo }}"><code>{{ s.repo }}</code></a> · <a href="{{ FORGE }}/{{ s.repo }}/src/branch/{{ s.branch }}" title="The branch the session works on, once pushed"><code>{{ s.branch }}</code></a></span></h1>
+{% if s.phase in ('Pending', 'Running') %}<form class="inline" method="post" action="/factory/s/{{ s.id }}/stop">{{ csrf(user) }}<button title="Stop the pod; its token is deleted">Stop</button></form>{% endif %}
+<pre class="log"{% if s.phase in ('Pending', 'Running') %} hx-get="/factory/s/{{ s.id }}/log" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>{{ s.log }}</pre>
+{% endblock %}

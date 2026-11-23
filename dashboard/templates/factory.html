@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Factory · {{ BRAND }}{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Applications</a></div>
+<h1>Factory <span class="sub" title="Agents working on repos you grant: one pod per session, a token for that repo only, deleted when the session ends. CI/CD never uses a grant; it only reads your repos.">sessions on your repos</span></h1>
+
+<h2>Sessions</h2>
+{% if granted %}
+<form class="panel fields" method="post" action="/factory/sessions">
+  {{ csrf(user) }}
+  <label title="A repo granted to the factory, that you can write to">Repo
+    <select name="repo">{% for r in granted %}<option>{{ r }}</option>{% endfor %}</select></label>
+  <label title="The agent program, run headless as it ships">Harness
+    <select name="harness">{% for h in harnesses %}<option>{{ h }}</option>{% endfor %}</select></label>
+  <label title="Where its model calls go: this cluster's local model, or an account you attached">Model
+    <select name="provider">{% for p in providers %}<option value="{{ p.name }}">{{ p.name }} · {{ p.model }}</option>{% endfor %}</select></label>
+  <label title="Minutes before the session is stopped">Limit
+    <input name="ttl" type="number" min="5" max="1440" value="60" size="5"></label>
+  <label class="wide" title="What to do. The session starts on branch factory/&lt;session&gt;; what it may push is what the repo allows the bot">Prompt
+    <textarea name="prompt" rows="4" cols="80" required></textarea></label>
+  <button class="primary">Start</button>
+</form>
+{% else %}<div class="empty">No repos granted.</div>{% endif %}
+{% if sessions %}
+<table class="list">
+  <tr><th>Session</th><th>Repo</th><th>Harness</th><th>State</th><th>Started</th></tr>
+  {% for s in sessions %}
+  <tr><td><a href="/factory/s/{{ s.id }}"><code>{{ s.id }}</code></a></td><td><code>{{ s.repo }}</code></td><td>{{ s.harness }}</td>
+      <td><span class="pill {{ {'Succeeded': 's-ok', 'Failed': 's-fail', 'Running': 's-run'}.get(s.phase, 'plain') }}" title="{{ s.reason or s.phase }}">{{ s.phase | lower }}</span>{% if not s.write %} <span class="pill plain" title="The token reads only">read</span>{% endif %}</td>
+      <td class="muted small">{{ s.started }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>Grants</h2>
+<form class="panel fields" method="post" action="/factory/grant">
+  {{ csrf(user) }}
+  <label title="A repo you administer. The bot becomes a collaborator there, in your name; you see and can remove it in the repo's settings">Repo
+    <select name="repo">{% for r in admin_repos %}<option>{{ r }}</option>{% endfor %}</select></label>
+  <label title="read: sessions can read code and issues. write: they can push, open PRs and comment, as far as the repo's branch protection allows">Role
+    <select name="role"><option>write</option><option>read</option></select></label>
+  <label title="Days until no new session may start on it; empty for no end">Days
+    <input name="days" type="number" min="1" max="365" size="4"></label>
+  <button class="primary">Grant</button>
+</form>
+{% if grants %}
+<table class="list">
+  <tr><th>Repo</th><th>Role</th><th>By</th><th>Until</th><th></th></tr>
+  {% for r, g in grants.items() %}
+  <tr><td><code>{{ r }}</code></td><td>{{ g.role }}</td><td>{{ g.by }}</td><td class="muted small">{{ g.until or '—' }}</td>
+      <td>{% if r in admin_repos %}<form class="inline" method="post" action="/factory/revoke">{{ csrf(user) }}<input type="hidden" name="repo" value="{{ r }}"><button title="The bot goes back to read if CI/CD builds from this repo, and is removed otherwise. Running sessions finish">Revoke</button></form>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>Models</h2>
+<table class="list">
+  <tr><th>Name</th><th>Kind</th><th>Model</th><th>Keys</th><th></th></tr>
+  {% for p in providers %}
+  <tr><td>{{ p.name }}</td><td>{{ p.kind }}</td><td><code>{{ p.model }}</code></td><td class="muted small">{{ p['keys'] | join(', ') or '—' }}</td>
+      <td>{% if p.name != 'local' %}<form class="inline" method="post" action="/factory/providers/{{ p.name }}/delete">{{ csrf(user) }}<button title="Remove the account; sessions already running keep their copy until they end">Detach</button></form>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+<form class="panel fields" method="post" action="/factory/providers" autocomplete="off">
+  {{ csrf(user) }}
+  <label title="Your name for it">Name <input name="name" size="14" pattern="[a-z0-9][a-z0-9-]{0,30}" required></label>
+  <label title="anthropic: an API key, or a Claude subscription token from `claude setup-token`. openai: an API key. compatible: any OpenAI-compatible endpoint and its key">Kind
+    <select name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></label>
+  <label title="The model id to ask for">Model <input name="model" size="22" required placeholder="claude-sonnet-5-5"></label>
+  <label title="compatible only: the endpoint's root, https://">URL <input name="base_url" size="28" placeholder="https://"></label>
+  <label title="Which key this is">Key
+    <select name="key_name">{% for k, names in kinds.items() %}{% for n in names %}<option>{{ n }}</option>{% endfor %}{% endfor %}</select></label>
+  <label title="Kept by the factory for your sessions only; never shown again">Value <input name="key" type="password" size="28" required></label>
+  <button class="primary">Attach</button>
+</form>
+{% endblock %}

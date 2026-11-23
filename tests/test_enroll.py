@@ -144,3 +144,70 @@ class ReadOnly(unittest.TestCase):
     def test_ci_cds_own_repo_may_be_direct(self):
         done, calls = self.run_enroll("direct", repo="ffwf/cicd-dashboard")
         self.assertTrue(any(c[0] == "BOT POST" and "tenants/my-app.yaml" in c[1] for c in calls))
+
+
+class FactoryGrants(unittest.TestCase):
+    """A grant is the bot as a collaborator, set as the user (an admin of the repo), then recorded."""
+
+    class R:
+        def __init__(self, code, data=None):
+            self.status_code, self._d, self.text, self.content = code, data, "", b"x"
+
+        def json(self):
+            return self._d
+
+    def clients(self, admin=True):
+        R, calls = self.R, []
+
+        class User:
+            def get(self, path, **k):
+                return R(200, {"permissions": {"admin": admin, "push": True}})
+
+            def put(self, path, json=None):
+                calls.append(("user PUT", path, json))
+                return R(204)
+
+            def delete(self, path):
+                calls.append(("user DELETE", path, None))
+                return R(204)
+
+        class Bot:
+            def get(self, path, **k):
+                return R(200, {"login": "ffwfbot"}) if path == "/user" else R(404)
+
+            def post(self, path, json=None):
+                calls.append(("bot POST", path, None))
+                return R(201)
+
+            def put(self, path, json=None):
+                calls.append(("bot PUT", path, None))
+                return R(200)
+
+            def request(self, m, path, json=None):
+                calls.append((f"bot {m}", path, None))
+                return R(200)
+        return User(), Bot(), calls
+
+    def test_grant_sets_the_collaborator_as_the_user_then_records_it(self):
+        from dashboard import factory
+        u, b, calls = self.clients()
+        factory.grant(u, b, "ada", "dev/app", "write", 30)
+        self.assertEqual(calls[0], ("user PUT", "/repos/dev/app/collaborators/ffwfbot", {"permission": "write"}))
+        self.assertEqual(calls[1][:2], ("bot POST", f"/repos/{factory.REPO}/contents/grants/dev/app.yaml"))
+
+    def test_only_an_admin_grants(self):
+        from dashboard import factory
+        u, b, calls = self.clients(admin=False)
+        with self.assertRaises(factory.FactoryError):
+            factory.grant(u, b, "ada", "dev/app", "write", None)
+        self.assertEqual(calls, [])
+
+    def test_revoke_keeps_read_where_ci_cd_builds_from_the_repo(self):
+        from unittest import mock
+
+        from dashboard import factory, platform
+        for tenants, want in (({"x": {"repo": "ffwf-iac/x", "sources": [{"repo": "dev/app"}]}}, "user PUT"), ({}, "user DELETE")):
+            u, b, calls = self.clients()
+            with mock.patch.object(platform, "tenants", return_value=tenants):
+                factory.revoke(u, b, None, "ada", "dev/app")
+            self.assertEqual(calls[0][0], want)
