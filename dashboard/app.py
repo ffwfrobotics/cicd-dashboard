@@ -32,7 +32,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.13.0"
+VERSION = "0.14.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -40,6 +40,8 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 BRAND = os.environ.get("DASHBOARD_BRAND", "cicd-dashboard")
 THEME = Path(os.environ.get("DASHBOARD_THEME") or HERE / "static" / "theme.css")
+if not THEME.is_file():                    # an optional theme ConfigMap that isn't there: the built-in one
+    THEME = HERE / "static" / "theme.css"
 
 
 def ts(value) -> Markup:

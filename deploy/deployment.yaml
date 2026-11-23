@@ -20,10 +20,12 @@ spec:
       - name: dashboard
         image: app-image
         ports: [{name: http, containerPort: 8080}]
+        # This instance's names (FORGE_URL, STATE_REPO, CLUSTER, DASHBOARD_BRAND, COMPLIANCE_REPO,
+        # FACTORY_REPO, ...), from ConfigMap dashboard-instance, made out of band per instance; the
+        # code's defaults are ffwf's. The theme (colours, logo) is ConfigMap dashboard-theme, key theme.css.
+        envFrom: [{configMapRef: {name: dashboard-instance, optional: true}}]
         env:
-        - {name: FORGE_URL, value: "https://forge.goblincorps.com"}
-        - {name: STATE_REPO, value: "ffwf/cicd-ref-arch"}
-        - {name: CLUSTER, value: "c-local"}
+        - {name: DASHBOARD_THEME, value: /etc/dashboard-theme/theme.css}
         readinessProbe:
           httpGet: {path: /healthz, port: http}
           periodSeconds: 1
@@ -43,7 +45,9 @@ spec:
         - {name: oauth, mountPath: /var/run/secrets/dashboard-oauth, readOnly: true}
         - {name: platform, mountPath: /var/run/secrets/dashboard-platform, readOnly: true}
         - {name: factory, mountPath: /var/run/secrets/dashboard-factory, readOnly: true}
+        - {name: theme, mountPath: /etc/dashboard-theme, readOnly: true}
       volumes:
+      - {name: theme, configMap: {name: dashboard-theme, optional: true}}
       - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
       # the forge OAuth2 client and session key, as files (not env vars); created out of band in
       # dev and prod only, so branch environments run read-only (their hosts aren't registered

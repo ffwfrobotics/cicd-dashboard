@@ -140,7 +140,7 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
                                      "actor": login, "hook_url": hook_url}, workflow="enroll.yaml")
         if not ok:
             raise EnrollError(f"Enrolling {name} was not started: {msg}")
-        return [f"{name}: following {image} from ffwf-iac/{name}"]
+        return [f"{name}: following {image} from {platform.iac_org(forge)}/{name}"]
     enrolled = platform.tenants(forge)
     for n in ([f"{name}-{p.rstrip('/').rsplit('/', 1)[-1]}" for p in paths or []] if mode == "monorepo" else [name]):
         check_name(n, enrolled)
@@ -186,7 +186,7 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
     # direct and monorepo modes make the repo an IaC root, which CI/CD writes to: only its own repos
     if mode in ("direct", "monorepo") and not platform.writable(forge, repo):
         raise EnrollError(f"{repo} is your repo, and CI/CD only reads yours: enroll it as wrapped "
-                          f"(CI/CD keeps how it's built and deployed in ffwf-iac/{name})")
+                          f"(CI/CD keeps how it's built and deployed in {platform.iac_org(forge)}/{name})")
 
     # 2. the bot can check it out (read: CI/CD never writes to a developer's repo)
     if not (bot.get(f"/repos/{repo}").json() or {}).get("permissions", {}).get("pull"):
@@ -218,7 +218,7 @@ def enroll(c: httpx.Client, forge: Forgejo, login: str, *, name: str, source: st
             ok, msg = platform.dispatch(inputs, workflow="enroll.yaml")
             if not ok:
                 raise EnrollError(f"Enrolling {app} was not started: {msg}")
-            done.append(f"{app}: {'wrapping in ffwf-iac/' + app if mode == 'wrapped' else 'enrolling ' + path}")
+            done.append(f"{app}: {'wrapping in ' + platform.iac_org(forge) + '/' + app if mode == 'wrapped' else 'enrolling ' + path}")
         return done
 
     # 4. the tenant record, pending

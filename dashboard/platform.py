@@ -74,6 +74,19 @@ def tenants(forge: Forgejo) -> dict[str, dict]:
     return out
 
 
+def instance(forge: Forgejo) -> dict:
+    """The platform repo's instance.yaml: this instance's names (iac_org, tenant, ...)."""
+    raw = forge.get(f"/repos/{STATE_REPO}/raw/instance.yaml?ref={STATE_BRANCH}", ttl=300, raw=True)
+    try:
+        return yaml.safe_load(raw or b"") or {}
+    except yaml.YAMLError:
+        return {}
+
+
+def iac_org(forge: Forgejo) -> str:
+    return instance(forge).get("iac_org") or "the IaC org"
+
+
 def writable(forge: Forgejo, repo: str) -> bool:
     """Is this one of CI/CD's own repos (tenants/_writable.yaml in the platform repo)? CI/CD writes only to
     those; a developer's repo is read only, so it is enrolled wrapped."""
