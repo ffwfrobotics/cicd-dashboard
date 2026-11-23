@@ -66,8 +66,8 @@
   {% else %}{% set own = user.login == p.requested_by %}
   <form class="inline" method="post" action="/promotions/{{ p.id }}/approve">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button{% if own %} title="You requested it: recorded as no second person"{% endif %}>Approve</button></form>
   <form class="inline" method="post" action="/promotions/{{ p.id }}/merge">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="{{ '' if own else 'primary' }}" title="{{ 'You requested it: applied when due, recorded as no second person' if own else 'Applied when due' }}">Merge</button></form>
-  {% set rule = rule_approvers(p.app) %}{% if rule and not own %}
-  <form class="inline" method="post" action="/promotions/{{ p.id }}/approve-rule">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary" title="Approvers of {{ p.app }}: {{ rule | join(', ') }} · the platform merges it · applied when due">Sign off</button></form>
+  {% set rule = rule_approvers(a.name) %}{% if rule and not own %}
+  <form class="inline" method="post" action="/promotions/{{ p.id }}/approve-rule">{{ csrf(user) }}<input type="hidden" name="next" value="{{ request.url.path }}"><button class="primary" title="Approvers of {{ a.name }}: {{ rule | join(', ') }} · the platform merges it · applied when due">Sign off</button></form>
   {% endif %}
   {% endif %}
 </p>
