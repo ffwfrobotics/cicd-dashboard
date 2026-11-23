@@ -131,6 +131,7 @@ class Promotion:
     security: str | None = None
     applied_at: str | None = None
     pr: dict | None = None
+    approved_by: list = field(default_factory=list)   # from the approval record: forge reviews and dashboard sign-offs
 
 
 @dataclass
@@ -304,7 +305,9 @@ def promotion_of(d: dict, state: str) -> Promotion:
         id=d["id"], app=d["app"], state=state, commit=d.get("commit"), image=d["image"],
         not_before=d.get("notBefore", ""), requested_by=d.get("requestedBy", ""), reason=d.get("reason", ""),
         approval=d.get("approval"), security=d.get("security"), applied_at=d.get("appliedAt"),
-        separated=(d.get("approvalRecord") or {}).get("separated"))
+        separated=(d.get("approvalRecord") or {}).get("separated"),
+        approved_by=[x + (" (rule)" if x in ((d.get("approvalRecord") or {}).get("approvedVia") or {}) else "")
+                     for x in (d.get("approvalRecord") or {}).get("approvedBy") or []])
 
 
 def parse_state(head: str, files: dict[str, bytes], cluster: str) -> State:

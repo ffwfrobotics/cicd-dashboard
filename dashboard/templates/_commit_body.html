@@ -56,7 +56,7 @@
   <dt>Author</dt><dd>{{ c.author }}</dd>
   <dt>Requested</dt><dd>{{ p.requested_by }}{% if p.reason %} <span class="muted">· {{ p.reason }}</span>{% endif %}</dd>
   <dt>Pull request</dt><dd>{% if pr %}<a href="{{ pr.url }}">#{{ pr.number }}</a> <span class="muted">· {{ 'merged by ' ~ pr.merged_by if pr.merged else pr.state }}</span>{% else %}—{% endif %}</dd>
-  <dt>Approved</dt><dd>{{ (pr.approvers or []) | join(', ') or '—' }}</dd>
+  <dt>Approved</dt><dd>{{ (pr.approvers or p.approved_by or []) | join(', ') or '—' }}</dd>
   <dt>Not before</dt><dd>{{ p.not_before | ts }}</dd>
   {% if p.security %}<dt>Gate at apply</dt><dd>{{ p.security }}</dd>{% endif %}
 </dl>
