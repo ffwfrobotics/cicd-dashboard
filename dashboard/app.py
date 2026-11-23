@@ -32,7 +32,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.15.0"
+VERSION = "0.15.1"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -79,15 +79,20 @@ _perm_cache: dict[tuple[str, str], tuple[float, bool]] = {}
 
 
 def can_write(user, a) -> bool:
-    """Write on the app's repo: the platform's test for self-service on its environments."""
+    """Write on the app's repo, or on one of its sources (a wrapped app's developers own the code, not
+    the IaC repo): the platform's test for self-service on its environments."""
     import time
     key = (user.login, a.repos[0])
     hit = _perm_cache.get(key)
     if hit and time.time() - hit[0] < 60:
         return hit[1]
+    ok = False
     with auth.as_user(user) as c:
-        r = c.get(f"/repos/{a.repos[0]}")
-        ok = r.status_code == 200 and bool(r.json().get("permissions", {}).get("push"))
+        for repo in [a.repos[0], *getattr(a, "sources", [])]:
+            r = c.get(f"/repos/{repo}")
+            if r.status_code == 200 and bool(r.json().get("permissions", {}).get("push")):
+                ok = True
+                break
     _perm_cache[key] = (time.time(), ok)
     return ok
 
@@ -502,7 +507,7 @@ def act(request: Request, name: str, action: str = Form(...), branch: str = Form
         else:
             # the platform pipeline: the dashboard checks write on the app repo, and names the user
             if not can_write(user, a):
-                return back(url, f"{action} needs write on {repo}")
+                return back(url, f"{action} needs write on {repo}" + (f" or {', '.join(a.sources)}" if a.sources else ""))
             inputs = {"app": name, "branch": branch or a.dev_branch, "action": action,
                       "actor": user.login, "not_before": not_before, "reason": reason}
             if action == "request-promotion":

@@ -4,6 +4,7 @@ Built on demand from the state repo and Forgejo (sources.py); nothing is stored.
 """
 from __future__ import annotations
 
+
 import fnmatch
 import hashlib
 import re
@@ -45,6 +46,7 @@ class AppInfo:
     status: str = "approved"     # pending: enrolled through the dashboard, branch environments only until an admin approves
     requested_by: str = ""
     approved: dict | None = None  # {by, at}
+    sources: list[str] = field(default_factory=list)   # a wrapped app's code repos (spec.sources)
 
     @property
     def dev_env_branch(self) -> str:
@@ -105,7 +107,7 @@ class Model:
             cfg = (st.configs.get(name) or {}).get("spec", {}).get("environments", {})
             out.append(AppInfo(
                 name=name, tenant=spec.get("tenant", "default"),
-                repos=spec.get("repos") or [spec["repo"]], path=spec.get("path", "."), owners=spec.get("owners", []),
+                repos=spec.get("repos") or [spec["repo"]], sources=[x["repo"] for x in spec.get("sources") or [] if x.get("repo")], path=spec.get("path", "."), owners=spec.get("owners", []),
                 dev_branch=(cfg.get("dev") or {}).get("branch") or spec.get("defaultBranch") or "master",
                 status=spec.get("status", "approved"), requested_by=spec.get("requestedBy", ""),
                 approved=spec.get("approved"),
