@@ -85,6 +85,39 @@ def enroll_wrapped_through_the_form(pg):
         raise AssertionError(f"{name} did not appear within 10 minutes")
 
 
+@check
+def factory_grant_and_session(pg):
+    """Factory: grant a repo (the bot becomes a collaborator, as you), start a session on it from the
+    form, and follow it to its end on the session page."""
+    import re
+    import time
+    repo = os.environ.get("FACTORY_REPO_UNDER_TEST", "ffwf-fixtures/fx-factory")
+    pg.goto(f"{BASE}/factory", wait_until="load", timeout=120000)
+    grant = pg.locator("form[action='/factory/grant']")
+    grant.locator("select[name=repo]").select_option(repo)
+    grant.locator("select[name=role]").select_option("write")
+    grant.locator("button").click()
+    pg.wait_for_load_state("load")
+    assert pg.locator("table.list code", has_text=repo).count(), "the grant is listed"
+    start = pg.locator("form[action='/factory/sessions']")
+    start.locator("select[name=repo]").select_option(repo)
+    start.locator("select[name=harness]").select_option("tau")
+    start.locator("select[name=provider]").select_option("local")
+    start.locator("textarea[name=prompt]").fill("Add a docstring to every function in calc.py, run the tests "
+                                                 "(python3 -m unittest discover -s tests), and commit.")
+    start.locator("button").click()
+    pg.wait_for_url(re.compile(r"/factory/s/s[0-9a-f]+$"), timeout=60000)
+    deadline = time.time() + 900
+    while time.time() < deadline:
+        pg.reload(wait_until="load")
+        if pg.locator("h1 .pill.s-ok, h1 .pill.s-fail").count():
+            break
+        time.sleep(10)
+    pg.screenshot(path=str(OUT / "factory-session.png"), full_page=True)
+    assert pg.locator("h1 .pill.s-ok").count(), "the session succeeded"
+    assert "factory/" in pg.locator("pre.log").inner_text(), "the log shows the branch it pushed"
+
+
 def main():
     names = sys.argv[1:] or list(CHECKS)
     OUT.mkdir(exist_ok=True)
