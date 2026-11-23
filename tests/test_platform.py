@@ -9,6 +9,8 @@ from unittest import mock
 
 from dashboard import platform
 
+R = platform.STATE_REPO     # whatever this instance names it (the pipeline sets STATE_REPO for its own repo)
+
 
 class FakeForge:
     def __init__(self, files):
@@ -22,8 +24,8 @@ class FakeForge:
 
 
 TENANTS = {
-    "/repos/ffwf/cicd-ref-arch/contents/tenants": [{"type": "file", "name": "demo.yaml"}, {"type": "file", "name": "_limits.yaml"}],
-    "/repos/ffwf/cicd-ref-arch/raw/tenants/demo.yaml": b"metadata: {name: demo}\nspec: {repo: o/demo-app}\n",
+    f"/repos/{R}/contents/tenants": [{"type": "file", "name": "demo.yaml"}, {"type": "file", "name": "_limits.yaml"}],
+    f"/repos/{R}/raw/tenants/demo.yaml": b"metadata: {name: demo}\nspec: {repo: o/demo-app}\n",
 }
 
 
@@ -53,7 +55,7 @@ class Hook(unittest.TestCase):
 
     def test_a_redelivery_of_a_built_commit_is_not_rebuilt_but_a_failed_one_is(self):
         def runs(status):
-            return dict(TENANTS, **{"/repos/ffwf/cicd-ref-arch/actions/runs": {"workflow_runs": [
+            return dict(TENANTS, **{f"/repos/{R}/actions/runs": {"workflow_runs": [
                 {"status": status, "event_payload": json.dumps({"inputs": {"app": "demo", "sha": "b" * 40}})}]}})
         push = {"ref": "refs/heads/main", "after": "b" * 40, "repository": {"full_name": "o/demo-app"}}
         sent = []
@@ -65,8 +67,8 @@ class Hook(unittest.TestCase):
 
     def test_push_to_a_source_bumps_the_wrapping_app(self):
         tenants = dict(TENANTS, **{
-            "/repos/ffwf/cicd-ref-arch/contents/tenants": [{"type": "file", "name": "w.yaml"}],
-            "/repos/ffwf/cicd-ref-arch/raw/tenants/w.yaml":
+            f"/repos/{R}/contents/tenants": [{"type": "file", "name": "w.yaml"}],
+            f"/repos/{R}/raw/tenants/w.yaml":
                 b"metadata: {name: w}\nspec: {repo: ffwf-iac/w, mode: wrapped, sources: [{path: src, repo: o/w-src}]}\n"})
         sent = []
         with mock.patch.object(platform, "dispatch", lambda inputs: (sent.append(inputs), (True, ""))[1]):
@@ -101,11 +103,11 @@ class Runs(unittest.TestCase):
     def test_jobs_are_keyed_by_the_app_commit_in_the_inputs(self):
         ev = lambda app, sha, action="deploy": json.dumps({"inputs": {"app": app, "sha": sha, "action": action}})
         forge = FakeForge({
-            "/repos/ffwf/cicd-ref-arch/actions/runs": {"workflow_runs": [
+            f"/repos/{R}/actions/runs": {"workflow_runs": [
                 {"index_in_repo": 12, "event_payload": ev("demo", "a" * 40)},
                 {"index_in_repo": 11, "event_payload": ev("other", "c" * 40)},
                 {"index_in_repo": 10, "event_payload": ev("demo", "", "pause")}]},
-            "/repos/ffwf/cicd-ref-arch/actions/tasks": {"workflow_runs": [
+            f"/repos/{R}/actions/tasks": {"workflow_runs": [
                 {"id": 5, "run_number": 12, "workflow_id": "pipeline.yaml", "name": "test", "status": "success"},
                 {"id": 6, "run_number": 12, "workflow_id": "pipeline.yaml", "name": "deliver", "status": "running"},
                 {"id": 4, "run_number": 11, "workflow_id": "pipeline.yaml", "name": "test", "status": "failure"},
@@ -120,7 +122,7 @@ class ApproverRule(unittest.TestCase):
     """An approver named by tenants/<app>.yaml spec.approvers: a login, or a team seen with their own session."""
 
     def test_rule_from_the_tenant_and_who_it_allows(self):
-        forge = FakeForge({**TENANTS, "/repos/ffwf/cicd-ref-arch/raw/tenants/demo.yaml":
+        forge = FakeForge({**TENANTS, f"/repos/{R}/raw/tenants/demo.yaml":
                            b"metadata: {name: demo}\nspec: {repo: o/demo-app, approvers: [avery, payments/approvers]}\n"})
         rule = platform.approvers(forge, "demo")
         self.assertEqual(rule, ["avery", "payments/approvers"])
