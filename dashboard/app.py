@@ -32,7 +32,7 @@ from .model import Model
 from .sources import FORGE as FORGE_URL, STATE_REPO, EvidenceAltered, EvidenceMissing
 
 HERE = Path(__file__).parent
-VERSION = "0.14.0"
+VERSION = "0.15.0"
 
 app = FastAPI(title="cicd-dashboard", version=VERSION, docs_url="/api/docs", redoc_url=None)
 app.middleware("http")(auth.persist)     # a refreshed forge token goes back into the session cookie
@@ -58,7 +58,7 @@ def ts(value) -> Markup:
 
 templates.env.filters["ts"] = ts
 templates.env.filters["runtime_word"] = runtime_word
-templates.env.globals.update(STATE_REPO=STATE_REPO, phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
+templates.env.globals.update(rule_approvers=lambda app: platform.approvers(model.forge, app), STATE_REPO=STATE_REPO, phases=phases, STAGES=STAGES, BRAND=BRAND, PROD_SIDE=PROD_SIDE, VERSION=VERSION,
                              COMMIT=os.environ.get("APP_COMMIT", "dev"), FORGE=os.environ.get("FORGE_URL", "https://forge.goblincorps.com"))
 model = Model()
 
@@ -436,7 +436,7 @@ def releases_review(request: Request, number: int, verb: str, csrf: str = Form("
             r = c.post(f"/repos/{comp.COMPLIANCE_REPO}/pulls/{number}/merge",
                        json={"Do": "merge", "MergeTitleField": f"Release {rid} to IT Security", "delete_branch_after_merge": True})
         else:
-            raise HTTPException(400, "approve or merge")
+            raise HTTPException(400, "approve, merge or approve-rule")
     comp.forget(user.login)
     if r.status_code not in (200, 201, 204):
         return back(url, f"{verb} failed: {forge_error(r)}")
@@ -537,6 +537,22 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
     auth.check_csrf(user, csrf)
     p = promotion_or_404(pid)
     url = next if next.startswith("/") else "/"
+    if verb == "approve-rule":
+        # An approver named by the app's rule (tenants/<app>.yaml spec.approvers), who needn't have write
+        # on the platform repo: checked here, merged as the platform's account, recorded by trailers
+        if user.login == p.requested_by:
+            return back(url, "You requested it: someone else approves")
+        with auth.as_user(user) as c:
+            by = platform.rule_allows(c, platform.approvers(model.forge, p.app), user.login)
+        if not by:
+            return back(url, f"Not an approver of {p.app}")
+        ok, msg = platform.merge_as_platform(
+            p.pr["number"], f"Promote {p.app} to prod ({p.id})",
+            f"Approved-by: {user.login}\nApproval-rule: tenants/{p.app}.yaml spec.approvers ({by})\nRequested-by: {p.requested_by}")
+        if not ok:
+            return back(url, f"Not merged: {msg}")
+        model.forge._cache.clear()
+        return back(url, "Approved. Applied when due.")
     with auth.as_user(user) as c:
         if verb == "approve":
             r = c.post(f"/repos/{STATE_REPO}/pulls/{p.pr['number']}/reviews",
@@ -545,7 +561,7 @@ def review(request: Request, pid: str, verb: str, csrf: str = Form(""), next: st
             r = c.post(f"/repos/{STATE_REPO}/pulls/{p.pr['number']}/merge",
                        json={"Do": "merge", "MergeTitleField": f"Promote {p.app} to prod ({p.id})"})
         else:
-            raise HTTPException(400, "approve or merge")
+            raise HTTPException(400, "approve, merge or approve-rule")
     if r.status_code not in (200, 201, 204):
         return back(url, f"{verb} failed: {forge_error(r)}")
     model.forge._cache.clear()

@@ -74,6 +74,38 @@ def tenants(forge: Forgejo) -> dict[str, dict]:
     return out
 
 
+def approvers(forge: Forgejo, app: str) -> list[str]:
+    """Who may approve the app's prod promotions in the dashboard without write on the platform repo:
+    tenants/<app>.yaml spec.approvers, logins and org/team names."""
+    return [str(x) for x in (tenants(forge).get(app, {}).get("approvers") or [])]
+
+
+def rule_allows(c: httpx.Client, rule: list[str], login: str) -> str | None:
+    """The rule entry that lets this user approve (their login, or a team they're in, seen with their
+    own forge session), or None."""
+    if login in rule:
+        return login
+    want = {x for x in rule if "/" in x}
+    if want:
+        r = c.get("/user/teams", params={"limit": 50})
+        for t in (r.json() if r.status_code == 200 else []):
+            name = f"{(t.get('organization') or {}).get('username')}/{t.get('name')}"
+            if name in want:
+                return name
+    return None
+
+
+def merge_as_platform(pr: int, title: str, message: str) -> tuple[bool, str]:
+    """Merge a platform-repo PR as the platform's account (the dashboard's platform token)."""
+    token = _secret("token")
+    if not token:
+        return False, "the dashboard has no platform token here"
+    r = httpx.post(f"{FORGE}/api/v1/repos/{STATE_REPO}/pulls/{pr}/merge", timeout=30,
+                   headers={"Authorization": f"token {token}", "Accept": "application/json"},
+                   json={"Do": "merge", "MergeTitleField": title, "MergeMessageField": message})
+    return r.status_code in (200, 204), f"the forge answered {r.status_code}"
+
+
 def instance(forge: Forgejo) -> dict:
     """The platform repo's instance.yaml: this instance's names (iac_org, tenant, ...)."""
     raw = forge.get(f"/repos/{STATE_REPO}/raw/instance.yaml?ref={STATE_BRANCH}", ttl=300, raw=True)

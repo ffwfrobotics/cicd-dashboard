@@ -114,3 +114,25 @@ class Runs(unittest.TestCase):
         jobs = platform.pipeline_jobs(forge, "demo")
         self.assertEqual(set(jobs), {"a" * 40})
         self.assertEqual({k: v["status"] for k, v in jobs["a" * 40].items()}, {"test": "success", "deliver": "running"})
+
+
+class ApproverRule(unittest.TestCase):
+    """An approver named by tenants/<app>.yaml spec.approvers: a login, or a team seen with their own session."""
+
+    def test_rule_from_the_tenant_and_who_it_allows(self):
+        forge = FakeForge({**TENANTS, "/repos/ffwf/cicd-ref-arch/raw/tenants/demo.yaml":
+                           b"metadata: {name: demo}\nspec: {repo: o/demo-app, approvers: [avery, payments/approvers]}\n"})
+        rule = platform.approvers(forge, "demo")
+        self.assertEqual(rule, ["avery", "payments/approvers"])
+        self.assertEqual(platform.approvers(forge, "other"), [])
+
+        class C:
+            def __init__(self, teams):
+                self.teams = teams
+
+            def get(self, path, params=None):
+                return mock.Mock(status_code=200, json=lambda: self.teams)
+        team = [{"name": "approvers", "organization": {"username": "payments"}}]
+        self.assertEqual(platform.rule_allows(C([]), rule, "avery"), "avery")
+        self.assertEqual(platform.rule_allows(C(team), rule, "blake"), "payments/approvers")
+        self.assertIsNone(platform.rule_allows(C([{"name": "developers", "organization": {"username": "payments"}}]), rule, "dana"))
