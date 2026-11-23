@@ -211,3 +211,16 @@ class FactoryGrants(unittest.TestCase):
             with mock.patch.object(platform, "tenants", return_value=tenants):
                 factory.revoke(u, b, None, "ada", "dev/app")
             self.assertEqual(calls[0][0], want)
+
+    def test_a_factory_with_its_own_account_is_granted_and_revoked_alone(self):
+        from unittest import mock
+
+        from dashboard import factory, platform
+        u, b, calls = self.clients()
+        with mock.patch.object(factory, "FACTORY_BOT", "factory-bot"), \
+                mock.patch.object(platform, "tenants", return_value={"x": {"repo": "acme-iac/x", "sources": [{"repo": "dev/app"}]}}):
+            factory.grant(u, b, "ada", "dev/app", "write", None)
+            self.assertEqual(calls[0], ("user PUT", "/repos/dev/app/collaborators/factory-bot", {"permission": "write"}))
+            calls.clear()
+            factory.revoke(u, b, None, "ada", "dev/app")
+            self.assertEqual(calls[0], ("user DELETE", "/repos/dev/app/collaborators/factory-bot", None))   # CI/CD's own read is untouched

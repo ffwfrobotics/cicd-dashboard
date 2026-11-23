@@ -23,6 +23,9 @@ URL = os.environ.get("FACTORY_URL", "http://controller.factory.svc.cluster.local
 REPO = os.environ.get("FACTORY_REPO", "ffwf/cicd-factory")
 SECRET = Path("/var/run/secrets/dashboard-factory/token")
 ROLES = ("read", "write")
+# The factory's own forge account, where it has one (FACTORY_BOT). Unset: the factory shares CI/CD's
+# account (ffwf), and the platform token's login is the one a grant adds.
+FACTORY_BOT = os.environ.get("FACTORY_BOT", "")
 
 
 class FactoryError(Exception):
@@ -90,7 +93,8 @@ def admin_repos(c: httpx.Client) -> list[str]:
 
 
 def _bot_login(bot: httpx.Client) -> str:
-    return bot.get("/user").json()["login"]
+    """The account a grant adds: the factory's own, or the shared one."""
+    return FACTORY_BOT or bot.get("/user").json()["login"]
 
 
 def _record(bot: httpx.Client, repo: str, text: str | None, message: str) -> None:
@@ -135,8 +139,9 @@ def revoke(c: httpx.Client, bot: httpx.Client, forge, login: str, repo: str) -> 
     if r.status_code != 200 or not (r.json().get("permissions") or {}).get("admin"):
         raise FactoryError(f"Revoking {repo} needs admin on it")
     who = _bot_login(bot)
-    ci = any(repo == s.get("repo") or repo in [x.get("repo") for x in s.get("sources") or []]
-             for s in platform.tenants(forge).values())
+    # a shared account keeps the read CI/CD needs on a repo it builds from; a factory account of its own goes
+    ci = not FACTORY_BOT and any(repo == s.get("repo") or repo in [x.get("repo") for x in s.get("sources") or []]
+                                 for s in platform.tenants(forge).values())
     r = c.put(f"/repos/{repo}/collaborators/{who}", json={"permission": "read"}) if ci \
         else c.delete(f"/repos/{repo}/collaborators/{who}")
     if r.status_code not in (200, 204, 404):
