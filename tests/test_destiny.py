@@ -151,6 +151,25 @@ class Slug(unittest.TestCase):
         self.assertLessEqual(len("hello-" + branch_slug("hello", long)), 63)
 
 
+class BuildOnly(unittest.TestCase):
+    """A build-only app: "image <target>" jobs are the build; nothing deploys or promotes."""
+
+    def test_images_built(self):
+        s = states(facts(build_only=True, jobs={"route": {"status": "success"}, "image controller": {"status": "success"},
+                                                "image harness": {"status": "success"}}))
+        self.assertEqual((s["build"], s["security"], s["deployed"], s["promotion"], s["prod"]), ("ok", "ok", "skip", "skip", "skip"))
+
+    def test_one_image_failed_or_running(self):
+        s = states(facts(build_only=True, jobs={"image controller": {"status": "success"}, "image harness": {"status": "failure"}}))
+        self.assertEqual(s["build"], "fail")
+        s = states(facts(build_only=True, jobs={"image controller": {"status": "running"}, "image harness": {"status": "failure"}}))
+        self.assertEqual(s["build"], "run")
+
+    def test_not_started(self):
+        s = states(facts(build_only=True, jobs={}))
+        self.assertEqual((s["build"], s["tests"], s["deployed"]), ("todo", "skip", "skip"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

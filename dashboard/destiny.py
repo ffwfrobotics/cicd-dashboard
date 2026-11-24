@@ -72,6 +72,7 @@ class Facts:
     request: dict | None = None       # the latest request-promotion run for it, before its PR: {status, url, actor, at}
     external: list[dict] = field(default_factory=list)   # IT Security's findings and advisories, as tests
     now: dt.datetime | None = None
+    build_only: bool = False          # tenant mode build-only: "image <target>" jobs, no environment, no promotion
 
 
 def job_state(task: dict | None) -> str | None:
@@ -93,6 +94,33 @@ def _when(v) -> dt.datetime:
 def runtime_word(summary: str) -> str:
     """The class word that starts the cicd/runtime description ("crash (app: exits 3). It exits...")."""
     return re.split(r" \(|: |\. ", summary, maxsplit=1)[0]
+
+
+def _build_only(f: Facts, st: dict[str, Stage]) -> list[Stage]:
+    """A build-only app's commit: each "image <target>" job builds, scans and gates (prod policy) one image,
+    and keeps its evidence by digest. No tests job, no environment, no promotion: whoever runs the images
+    takes the digests."""
+    images = {k: v for k, v in f.jobs.items() if k.startswith("image ")}
+    got = [job_state(v) for v in images.values()]
+    b = st["build"]
+    if not images:
+        b.state = "run" if job_state(f.jobs.get("route")) == "run" else "todo"
+    elif "run" in got:
+        b.state, b.detail = "run", "running"
+    elif "fail" in got:
+        b.state, b.detail = "fail", "failed"
+    else:
+        b.state, b.detail = ("ok" if "ok" in got else "skip"), f"{sum(s == 'ok' for s in got)}/{len(got)}"
+    bad = next((v for v in images.values() if job_state(v) == "fail"), None)
+    b.href = (bad or next(iter(images.values()), {})).get("url")
+    b.tip = "Each image built, scanned and gated under the prod policy; a failure is the build or the gate"
+    st["security"].state = b.state if b.state in ("ok", "fail", "run") else "todo"
+    st["security"].href = b.href
+    for k in ("contract", "tests", "deployed", *PROD_SIDE):
+        st[k].state, st[k].detail = "skip", ""
+    st["deployed"].detail = "build-only"
+    st["deployed"].tip = "No environment: the images are kept by digest, and whoever runs them takes the digests"
+    return [st[k] for k, _ in STAGES]
 
 
 def destiny(f: Facts) -> list[Stage]:
@@ -118,6 +146,9 @@ def destiny(f: Facts) -> list[Stage]:
             st[k].state, st[k].detail = "skip", ""
         st["tests"].detail, st["tests"].tip = "nothing to run", f.contract["summary"]
         return [st[k] for k, _ in STAGES]
+
+    if f.build_only:
+        return _build_only(f, st)
 
     if f.not_in_cicd and not f.deploy:
         for k in ("tests", "build", "security", "deployed"):

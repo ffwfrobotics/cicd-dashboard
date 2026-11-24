@@ -47,6 +47,7 @@ class AppInfo:
     requested_by: str = ""
     approved: dict | None = None  # {by, at}
     sources: list[str] = field(default_factory=list)   # a wrapped app's code repos (spec.sources)
+    build_only: bool = False     # mode build-only: images built, scanned and kept by digest; no environment at all
 
     @property
     def dev_env_branch(self) -> str:
@@ -110,7 +111,7 @@ class Model:
                 repos=spec.get("repos") or [spec["repo"]], sources=[x["repo"] for x in spec.get("sources") or [] if x.get("repo")], path=spec.get("path", "."), owners=spec.get("owners", []),
                 dev_branch=(cfg.get("dev") or {}).get("branch") or spec.get("defaultBranch") or "master",
                 status=spec.get("status", "approved"), requested_by=spec.get("requestedBy", ""),
-                approved=spec.get("approved"),
+                approved=spec.get("approved"), build_only=spec.get("mode") == "build-only",
                 exclude=(cfg.get("branch") or {}).get("exclude", ["promote/*"]),
                 envs=sorted(st.envs.get(name, []), key=lambda e: (e.kind != "prod", e.kind != "dev", e.dir))))
         return out
@@ -206,7 +207,8 @@ class Model:
             f.contract = self.contract(repo, sha)
             f.runtime = self.runtime(repo, sha)
         st = self.state()
-        if branch and branch != app.dev_env_branch:
+        f.build_only = app.build_only
+        if branch and branch != app.dev_env_branch and not app.build_only:   # build-only: no environments to wait for
             if branch in st.paused.get(app.name, {}):
                 p = st.paused[app.name][branch]
                 f.not_in_cicd, f.not_in_cicd_why = "paused", f"Paused by {p.get('by', '?')}"
